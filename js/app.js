@@ -1,0 +1,368 @@
+// Global state variables
+let rooms = [];
+let doors = [];
+let freehandPaths = [];
+let currentPath = null;
+let selectedRoom = null;
+let mode = 'draw';
+let drawing = false;
+let startX, startY;
+let dragging = false;
+let dragRoom = null;
+let dragOffsetX, dragOffsetY;
+let zoom = 1;
+let panX = 0, panY = 0;
+let panMode = false;
+let lastPanX, lastPanY;
+let roomCounter = 1;
+let currentPlanId = null;
+
+// Set drawing mode
+function setMode(m) {
+  mode = m;
+  document.getElementById('btnDraw').classList.remove('active');
+  document.getElementById('btnSelect').classList.remove('active');
+  document.getElementById('btnDoor').classList.remove('active');
+  document.getElementById('btnFreehand').classList.remove('active');
+  document.getElementById('btnErase').classList.remove('active');
+  
+  if (m === 'draw') {
+    document.getElementById('btnDraw').classList.add('active');
+    canvas.style.cursor = 'crosshair';
+  } else if (m === 'select') {
+    document.getElementById('btnSelect').classList.add('active');
+    canvas.style.cursor = 'move';
+  } else if (m === 'door') {
+    document.getElementById('btnDoor').classList.add('active');
+    canvas.style.cursor = 'crosshair';
+  } else if (m === 'freehand') {
+    document.getElementById('btnFreehand').classList.add('active');
+    canvas.style.cursor = 'crosshair';
+  } else if (m === 'erase') {
+    document.getElementById('btnErase').classList.add('active');
+    canvas.style.cursor = 'pointer';
+  }
+  updateInfo();
+}
+
+function updateInfo() {
+  const info = document.getElementById('info');
+  const panStatus = document.getElementById('panStatus');
+  
+  panStatus.textContent = panMode ? 'Pan On' : 'Pan Off';
+  
+  if (mode === 'draw') {
+    info.textContent = 'Click and drag to draw rooms';
+  } else if (mode === 'select') {
+    info.textContent = 'Click and drag rooms to move them';
+  } else if (mode === 'door') {
+    info.textContent = 'Click on a room edge to add a door';
+  } else if (mode === 'freehand') {
+    info.textContent = 'Click and drag to draw (lines auto-straighten)';
+  } else if (mode === 'erase') {
+    info.textContent = 'Click on freehand drawings to erase them';
+  }
+}
+
+// Get pixels per meter
+function getPxPerMeter() {
+  return parseFloat(document.getElementById('pxPerMeter').value);
+}
+
+// Utility functions
+function getRandomColor() {
+  const colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22'];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
+
+// Room management
+function updateRoomsList() {
+  const list = document.getElementById('roomsList');
+  list.innerHTML = '';
+  
+  const ppm = getPxPerMeter();
+  
+  rooms.forEach(room => {
+    const div = document.createElement('div');
+    div.className = 'room-item' + (room === selectedRoom ? ' selected' : '');
+    div.onclick = () => {
+      selectedRoom = room;
+      updateRoomsList();
+      draw();
+    };
+    
+    const lengthM = (room.width / ppm).toFixed(2);
+    const widthM = (room.height / ppm).toFixed(2);
+    
+    let doorsHTML = '';
+    if (room.doors.length > 0) {
+      doorsHTML = '<div class="door-list"><strong>Doors:</strong>';
+      room.doors.forEach(door => {
+        const doorWidthM = (door.width / ppm).toFixed(2);
+        doorsHTML += `
+          <div class="door-item">
+            <span>${door.type} (${doorWidthM}m) - ${door.side}</span>
+            <button onclick="deleteDoor(${room.id}, ${door.id}); event.stopPropagation();">×</button>
+          </div>
+        `;
+      });
+      doorsHTML += '</div>';
+    }
+    
+    let combinedBadge = '';
+    let splitButton = '';
+    if (room.isCombined) {
+      combinedBadge = '<span class="combined-badge">✨ Combined Room</span>';
+      splitButton = `<button class="btn-split" onclick="splitRoom(${room.id}); event.stopPropagation();">Split Back</button>`;
+    }
+    
+    div.innerHTML = `
+      <button onclick="deleteRoom(${room.id}); event.stopPropagation();">Delete</button>
+      ${splitButton}
+      <span class="color-indicator" style="background: ${room.color};"></span>
+      <input type="text" value="${room.name}" 
+             onchange="renameRoom(${room.id}, this.value)"
+             onclick="event.stopPropagation()">
+      ${combinedBadge}
+      <div class="room-dims">📏 ${lengthM}m × ${widthM}m</div>
+      ${doorsHTML}
+      <select onchange="setOrientation(${room.id}, this.value)" 
+              onclick="event.stopPropagation()">
+        <option value="length" ${room.orientation === 'length' ? 'selected' : ''}>
+          Carpet Along Length
+        </option>
+        <option value="width" ${room.orientation === 'width' ? 'selected' : ''}>
+          Carpet Along Width
+        </option>
+      </select>
+    `;
+    
+    list.appendChild(div);
+  });
+}
+
+function splitRoom(roomId) {
+  const room = rooms.find(r => r.id === roomId);
+  if (!room || !room.isCombined || !room.originalRoomData) {
+    alert('Cannot split this room - original room data not found.');
+    return;
+  }
+  
+  // Restore original rooms
+  room.originalRoomData.forEach(origRoom => {
+    rooms.push(origRoom);
+  });
+  
+  // Remove combined room
+  rooms = rooms.filter(r => r.id !== roomId);
+  
+  selectedRoom = null;
+  updateRoomsList();
+  draw();
+  
+  alert('Room split back into original rooms!');
+}
+
+function renameRoom(id, name) {
+  const room = rooms.find(r => r.id === id);
+  if (room) {
+    room.name = name;
+    draw();
+  }
+}
+
+function setOrientation(id, orientation) {
+  const room = rooms.find(r => r.id === id);
+  if (room) room.orientation = orientation;
+}
+
+function deleteRoom(id) {
+  rooms = rooms.filter(r => r.id !== id);
+  doors = doors.filter(d => d.roomId !== id);
+  selectedRoom = null;
+  updateRoomsList();
+  draw();
+}
+
+function deleteDoor(roomId, doorId) {
+  const room = rooms.find(r => r.id === roomId);
+  if (room) {
+    room.doors = room.doors.filter(d => d.id !== doorId);
+    doors = doors.filter(d => d.id !== doorId);
+    updateRoomsList();
+    draw();
+  }
+}
+
+// Door functions
+function addDoorAtPosition(x, y) {
+  for (let room of rooms) {
+    const edges = [
+      {side: 'top', x1: room.x, y1: room.y, x2: room.x + room.width, y2: room.y},
+      {side: 'right', x1: room.x + room.width, y1: room.y, x2: room.x + room.width, y2: room.y + room.height},
+      {side: 'bottom', x1: room.x, y1: room.y + room.height, x2: room.x + room.width, y2: room.y + room.height},
+      {side: 'left', x1: room.x, y1: room.y, x2: room.x, y2: room.y + room.height}
+    ];
+
+    for (let edge of edges) {
+      const dist = distanceToLineSegment(x, y, edge.x1, edge.y1, edge.x2, edge.y2);
+      if (dist < 20 / zoom) {
+        const doorWidth = parseFloat(document.getElementById('doorWidth').value) * getPxPerMeter();
+        const doorType = document.getElementById('doorType').value;
+        
+        let doorX, doorY;
+        if (edge.side === 'top' || edge.side === 'bottom') {
+          doorX = Math.max(edge.x1, Math.min(edge.x2 - doorWidth, x - doorWidth / 2));
+          doorY = edge.y1;
+        } else {
+          doorX = edge.x1;
+          doorY = Math.max(edge.y1, Math.min(edge.y2 - doorWidth, y - doorWidth / 2));
+        }
+
+        const door = {
+          id: Date.now(),
+          roomId: room.id,
+          x: doorX,
+          y: doorY,
+          width: doorWidth,
+          side: edge.side,
+          type: doorType
+        };
+
+        room.doors.push(door);
+        doors.push(door);
+        updateRoomsList();
+        draw();
+        return;
+      }
+    }
+  }
+}
+
+function distanceToLineSegment(px, py, x1, y1, x2, y2) {
+  const A = px - x1;
+  const B = py - y1;
+  const C = x2 - x1;
+  const D = y2 - y1;
+
+  const dot = A * C + B * D;
+  const lenSq = C * C + D * D;
+  let param = -1;
+  
+  if (lenSq !== 0) param = dot / lenSq;
+
+  let xx, yy;
+
+  if (param < 0) {
+    xx = x1;
+    yy = y1;
+  } else if (param > 1) {
+    xx = x2;
+    yy = y2;
+  } else {
+    xx = x1 + param * C;
+    yy = y1 + param * D;
+  }
+
+  const dx = px - xx;
+  const dy = py - yy;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Freehand functions
+function eraseFreehandAt(x, y) {
+  for (let i = freehandPaths.length - 1; i >= 0; i--) {
+    const path = freehandPaths[i];
+    for (let point of path.points) {
+      const dist = Math.sqrt((point.x - x) ** 2 + (point.y - y) ** 2);
+      if (dist < 10 / zoom) {
+        freehandPaths.splice(i, 1);
+        draw();
+        return;
+      }
+    }
+  }
+}
+
+function clearFreehand() {
+  if (confirm('Clear all freehand drawings?')) {
+    freehandPaths = [];
+    draw();
+  }
+}
+
+// Line straightening algorithm
+function straightenPath(points) {
+  if (points.length < 2) return points;
+
+  const threshold = 15; // degrees from horizontal/vertical
+  const straightened = [points[0]];
+
+  for (let i = 1; i < points.length; i++) {
+    const prev = straightened[straightened.length - 1];
+    const curr = points[i];
+
+    const dx = curr.x - prev.x;
+    const dy = curr.y - prev.y;
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+    // Check if nearly horizontal
+    if (Math.abs(angle) < threshold || Math.abs(angle - 180) < threshold || Math.abs(angle + 180) < threshold) {
+      straightened.push({x: curr.x, y: prev.y});
+    }
+    // Check if nearly vertical
+    else if (Math.abs(angle - 90) < threshold || Math.abs(angle + 90) < threshold) {
+      straightened.push({x: prev.x, y: curr.y});
+    }
+    // Keep original point
+    else {
+      straightened.push(curr);
+    }
+  }
+
+  return straightened;
+}
+
+// Zoom controls
+function zoomIn() {
+  const oldZoom = zoom;
+  zoom *= 1.2;
+  const canvas = document.getElementById('canvas');
+  panX = (panX - canvas.width / 2) * (zoom / oldZoom) + canvas.width / 2;
+  panY = (panY - canvas.height / 2) * (zoom / oldZoom) + canvas.height / 2;
+  draw();
+}
+
+function zoomOut() {
+  const oldZoom = zoom;
+  zoom /= 1.2;
+  const canvas = document.getElementById('canvas');
+  panX = (panX - canvas.width / 2) * (zoom / oldZoom) + canvas.width / 2;
+  panY = (panY - canvas.height / 2) * (zoom / oldZoom) + canvas.height / 2;
+  draw();
+}
+
+function resetZoom() {
+  zoom = 1;
+  panX = 0;
+  panY = 0;
+  draw();
+}
+
+function clearAll() {
+  if (confirm('Clear all rooms, doors, and freehand drawings?')) {
+    rooms = [];
+    doors = [];
+    freehandPaths = [];
+    selectedRoom = null;
+    roomCounter = 1;
+    currentPlanId = null;
+    document.getElementById('currentPlanId').style.display = 'none';
+    updateRoomsList();
+    draw();
+    document.getElementById('results').innerHTML = '';
+  }
+}
+
+// Initialize
+updateInfo();
