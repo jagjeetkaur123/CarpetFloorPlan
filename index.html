@@ -118,12 +118,29 @@
     <!-- Right Panel -->
     <div class="right-panel">
       <h2>📋 Rooms</h2>
+
+      <div class="calc-settings no-print">
+        <div class="cs-field">
+          <label for="jobRef">Job Ref / Customer</label>
+          <input type="text" id="jobRef" placeholder="e.g. Smith – 12 Oak Ave">
+        </div>
+        <div class="cs-field">
+          <label for="pricePerSqm">Price per m² (£)</label>
+          <input type="number" id="pricePerSqm" step="0.01" placeholder="e.g. 12.50">
+        </div>
+        <div class="cs-field">
+          <label for="fittingCost">Fitting Cost (£)</label>
+          <input type="number" id="fittingCost" step="0.01" placeholder="e.g. 80.00">
+        </div>
+      </div>
+
       <div id="roomsList"></div>
-      
-      <button class="calc-btn" onclick="calculate()">
-        🧮 Calculate Carpet
-      </button>
-      
+
+      <div class="calc-btn-row no-print">
+        <button class="calc-btn" onclick="calculate()">🧮 Calculate Carpet</button>
+        <button class="calc-btn reset-btn" onclick="resetOffcuts()">♻️ Reset Offcuts</button>
+      </div>
+
       <div id="results"></div>
     </div>
   </div>

@@ -124,39 +124,3 @@ function showLoadModal() {
 function closeLoadModal() {
   document.getElementById('loadModal').style.display = 'none';
 }
-let selectedRoom = null;
-let offsetX = 0;
-let offsetY = 0;
-let isDragging = false;
-
-canvas.addEventListener('mousedown', (e) => {
-  if (currentMode === 'select') {
-    const mouseX = e.offsetX;
-    const mouseY = e.offsetY;
-    selectedRoom = rooms.find(room => isInsideRoom(mouseX, mouseY, room));
-    if (selectedRoom) {
-      offsetX = mouseX - selectedRoom.x;
-      offsetY = mouseY - selectedRoom.y;
-      isDragging = true;
-    }
-  }
-});
-
-
-canvas.addEventListener('mousemove', (e) => {
-  if (isDragging && selectedRoom) {
-    selectedRoom.x = e.offsetX - offsetX;
-    selectedRoom.y = e.offsetY - offsetY;
-    draw(); // Redraw canvas with updated positions
-  }
-});
-
-canvas.addEventListener('mouseup', () => {
-  isDragging = false;
-  selectedRoom = null;
-});
-
-function isInsideRoom(x, y, room) {
-  return x >= room.x && x <= room.x + room.width &&
-         y >= room.y && y <= room.y + room.height;
-}

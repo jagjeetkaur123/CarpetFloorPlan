@@ -124,16 +124,23 @@ function updateRoomsList() {
              onchange="renameRoom(${room.id}, this.value)"
              onclick="event.stopPropagation()">
       ${combinedBadge}
-      <div class="room-dims">📏 ${lengthM}m × ${widthM}m</div>
+      <div class="room-dims">
+        📏
+        <label style="color:#ecf0f1;font-size:0.85em;">L:</label>
+        <input type="number" class="dim-input" step="0.01" min="0.1" value="${lengthM}"
+               onchange="resizeRoom(${room.id}, parseFloat(this.value), parseFloat(this.parentNode.querySelector('.dim-w').value))"
+               onclick="event.stopPropagation()">m ×
+        <label style="color:#ecf0f1;font-size:0.85em;">W:</label>
+        <input type="number" class="dim-input dim-w" step="0.01" min="0.1" value="${widthM}"
+               onchange="resizeRoom(${room.id}, parseFloat(this.parentNode.querySelector('.dim-input').value), parseFloat(this.value))"
+               onclick="event.stopPropagation()">m
+      </div>
       ${doorsHTML}
-      <select onchange="setOrientation(${room.id}, this.value)" 
+      <select onchange="setOrientation(${room.id}, this.value)"
               onclick="event.stopPropagation()">
-        <option value="length" ${room.orientation === 'length' ? 'selected' : ''}>
-          Carpet Along Length
-        </option>
-        <option value="width" ${room.orientation === 'width' ? 'selected' : ''}>
-          Carpet Along Width
-        </option>
+        <option value="auto"   ${(!room.orientation || room.orientation === 'auto')   ? 'selected' : ''}>Auto (min joints)</option>
+        <option value="length" ${room.orientation === 'length' ? 'selected' : ''}>Carpet Along Length</option>
+        <option value="width"  ${room.orientation === 'width'  ? 'selected' : ''}>Carpet Along Width</option>
       </select>
     `;
     
@@ -169,6 +176,15 @@ function renameRoom(id, name) {
     room.name = name;
     draw();
   }
+}
+
+function resizeRoom(id, lengthM, widthM) {
+  const room = rooms.find(r => r.id === id);
+  if (!room || isNaN(lengthM) || isNaN(widthM) || lengthM <= 0 || widthM <= 0) return;
+  const ppm = getPxPerMeter();
+  room.width = lengthM * ppm;
+  room.height = widthM * ppm;
+  draw();
 }
 
 function setOrientation(id, orientation) {

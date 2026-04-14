@@ -232,6 +232,21 @@ body {
   font-size: 0.8rem;
   color: #555;
   margin: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.dim-input {
+  width: 60px;
+  padding: 2px 4px;
+  font-size: 0.8rem;
+  border: 1px solid #555;
+  border-radius: 3px;
+  background: #3d5a80;
+  color: #ecf0f1;
+  text-align: center;
 }
 
 .door-list {
@@ -544,4 +559,213 @@ body {
   font-size: 0.75rem;
   margin: 4px 0;
   text-align: center;
+}
+
+/* ── Calc settings panel (right panel) ─────────────────────────── */
+.calc-settings {
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.cs-field {
+  margin-bottom: 7px;
+}
+
+.cs-field:last-child {
+  margin-bottom: 0;
+}
+
+.cs-field label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+}
+
+.cs-field input {
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 0.875rem;
+  color: #111;
+}
+
+.cs-field input:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+/* ── Calculate button row ───────────────────────────────────────── */
+.calc-btn-row {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.calc-btn-row .calc-btn {
+  flex: 1;
+  margin: 0;
+  padding: 9px 6px;
+  font-size: 0.85rem;
+}
+
+.reset-btn {
+  background: #6b7280 !important;
+}
+
+.reset-btn:hover {
+  background: #4b5563 !important;
+}
+
+/* ── Result cards ───────────────────────────────────────────────── */
+.room-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.room-card h3 {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  color: #1e3a5f;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.stat {
+  background: #f9fafb;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  min-width: 110px;
+}
+
+.stat .lbl {
+  font-size: 0.68rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.stat .val {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-top: 0.1rem;
+  color: #111;
+}
+
+.stat.joints-0  { background: #dcfce7; }
+.stat.joints-1  { background: #fef9c3; }
+.stat.joints-2p { background: #fee2e2; }
+
+.info-strip {
+  margin-top: 0.45rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.info-green { background: #d1fae5; color: #065f46; }
+.info-amber { background: #fef3c7; color: #92400e; }
+
+/* ── Summary bar ────────────────────────────────────────────────── */
+.summary-bar {
+  background: #1e3a5f;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.sum-stat .lbl {
+  font-size: 0.68rem;
+  color: #93c5fd;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.sum-stat .val {
+  font-size: 1rem;
+  font-weight: 800;
+  margin-top: 0.1rem;
+}
+
+/* ── Offcut note ────────────────────────────────────────────────── */
+.offcut-note {
+  margin-top: 0.65rem;
+  padding: 0.5rem 0.85rem;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+/* ── Print button ───────────────────────────────────────────────── */
+.btn-print {
+  background: #7c3aed;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.btn-print:hover { background: #6d28d9; }
+
+/* ── Print-only elements ────────────────────────────────────────── */
+.print-only { display: none; }
+
+/* ── @media print ───────────────────────────────────────────────── */
+@media print {
+  .no-print         { display: none !important; }
+  .print-only       { display: block !important; }
+  .sidebar          { display: none !important; }
+  .canvas-container { display: none !important; }
+
+  body { background: #fff; overflow: visible; padding: 0.5rem; }
+
+  .app-container { display: block; height: auto; }
+  .right-panel   { width: 100%; border: none; overflow: visible; }
+
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  .summary-bar    { background: #1e3a5f !important; color: #fff !important; }
+  .sum-stat .lbl  { color: #93c5fd !important; }
+  .stat.joints-0  { background: #dcfce7 !important; }
+  .stat.joints-1  { background: #fef9c3 !important; }
+  .stat.joints-2p { background: #fee2e2 !important; }
+  .info-green     { background: #d1fae5 !important; color: #065f46 !important; }
+  .info-amber     { background: #fef3c7 !important; color: #92400e !important; }
+  .offcut-note    { background: #fffbeb !important; border-color: #fcd34d !important; }
+  .room-card      { break-inside: avoid; border: 1px solid #ccc !important; }
+
+  .print-header {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 2px solid #1e3a5f;
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .print-header h2   { margin: 0; font-size: 13pt; color: #1e3a5f; }
+  .ph-meta           { font-size: 9pt; color: #555; text-align: right; line-height: 1.6; }
 }

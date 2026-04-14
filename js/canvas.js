@@ -160,7 +160,7 @@ canvas.addEventListener('mouseup', (e) => {
         y: Math.min(startY, world.y),
         width: width,
         height: height,
-        orientation: 'length',
+        orientation: 'auto',
         color: getRandomColor(),
         doors: []
       };
