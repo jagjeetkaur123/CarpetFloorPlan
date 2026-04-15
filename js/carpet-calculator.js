@@ -8,33 +8,86 @@ function roundUp(val, step) {
 function fmt(n)    { return n.toFixed(2); }
 function fmtGBP(n) { return '\u00a3' + n.toFixed(2); }
 
-// ─── Core room calculator ─────────────────────────────────────────────────────
-// Accepts: room = { name, length (m), width (m), orientation ('auto'|'length'|'width') }
-// offcuts array is mutated in place; pass a fresh [] each calculate() session.
-
-function calcRoom(room, rollWidth, roundTo, offcuts) {
+// ─── Orientation helper ────────────────────────────────────────────────────────
+function getRoomOrientInfo(room, rollWidth) {
   const L = room.length, W = room.width;
-  if (!L || !W) return null;
-
-  let runSide, acrossSide, orientLabel;
-
   const dropsAlongLength = Math.ceil(W / rollWidth); // run along L, across W
   const dropsAlongWidth  = Math.ceil(L / rollWidth); // run along W, across L
+
+  let runSide, acrossSide, totalDrops, orientLabel;
 
   if (!room.orientation || room.orientation === 'auto') {
     const lenA = dropsAlongLength * L;
     const lenB = dropsAlongWidth  * W;
     if (dropsAlongLength < dropsAlongWidth ||
         (dropsAlongLength === dropsAlongWidth && lenA <= lenB)) {
-      runSide = L; acrossSide = W; orientLabel = 'along length';
+      runSide = L; acrossSide = W; totalDrops = dropsAlongLength; orientLabel = 'along length';
     } else {
-      runSide = W; acrossSide = L; orientLabel = 'along width';
+      runSide = W; acrossSide = L; totalDrops = dropsAlongWidth;  orientLabel = 'along width';
     }
   } else if (room.orientation === 'length') {
-    runSide = L; acrossSide = W; orientLabel = 'along length';
+    runSide = L; acrossSide = W; totalDrops = dropsAlongLength; orientLabel = 'along length';
   } else {
-    runSide = W; acrossSide = L; orientLabel = 'along width';
+    runSide = W; acrossSide = L; totalDrops = dropsAlongWidth;  orientLabel = 'along width';
   }
+
+  return { runSide, acrossSide, totalDrops, orientLabel };
+}
+
+// ─── Optimisation finder ───────────────────────────────────────────────────────
+// Detects when extending a room's cut length allows a later narrow room to be
+// cut from the offcut instead of buying new carpet.
+// Returns: { donorIndex: { extendTo, beneficiaryIndex, beneficiaryName, savingM } }
+function findOptimisations(metreRooms, rollWidth, roundTo) {
+  const opts = {};
+
+  for (let i = 0; i < metreRooms.length; i++) {
+    const roomA = metreRooms[i];
+    if (!roomA.length || !roomA.width) continue;
+
+    const { runSide: runA, acrossSide: acrossA, totalDrops: dropsA } = getRoomOrientInfo(roomA, rollWidth);
+    const offcutW  = dropsA * rollWidth - acrossA;
+    if (offcutW <= 0.05) continue; // Room A produces no useful offcut
+
+    const currentA = roundUp(runA, roundTo);
+
+    for (let j = i + 1; j < metreRooms.length; j++) {
+      const roomB = metreRooms[j];
+      if (!roomB.length || !roomB.width) continue;
+
+      const { runSide: runB, acrossSide: acrossB, totalDrops: dropsB } = getRoomOrientInfo(roomB, rollWidth);
+      const extendTo = roundUp(runB, roundTo);
+
+      // Room B must fit in offcut width, and extension must actually increase Room A's run
+      if (offcutW >= acrossB && extendTo > currentA) {
+        const extraA   = roundUp(dropsA * extendTo, roundTo) - roundUp(dropsA * currentA, roundTo);
+        const normalB  = roundUp(dropsB * runB, roundTo);
+        const savingM  = normalB - extraA;
+
+        if (savingM > 0.01) {
+          // Keep only the best (highest saving) optimisation per donor room
+          if (!opts[i] || savingM > opts[i].savingM) {
+            opts[i] = { extendTo, beneficiaryIndex: j, beneficiaryName: roomB.name, savingM };
+          }
+        }
+      }
+    }
+  }
+
+  return opts;
+}
+
+// ─── Core room calculator ─────────────────────────────────────────────────────
+// minRunLength: optionally extend the run side (used by optimisation)
+function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0) {
+  const L = room.length, W = room.width;
+  if (!L || !W) return null;
+
+  const { runSide: naturalRun, acrossSide, orientLabel } = getRoomOrientInfo(room, rollWidth);
+
+  // Apply extension if optimisation requested
+  const runSide = (minRunLength > naturalRun) ? roundUp(minRunLength, roundTo) : naturalRun;
+  const wasExtended = runSide > naturalRun;
 
   // --- Offcut reuse ---
   for (let i = 0; i < offcuts.length; i++) {
@@ -51,7 +104,7 @@ function calcRoom(room, rollWidth, roundTo, offcuts) {
         carpetArea: acrossSide * runSide,
         offcutUsed: `Entire room from offcut [${strip.from}]${surplus}`,
         offcutGenerated: null,
-        orientLabel
+        orientLabel, extended: false, naturalRoomLen: 0
       };
     }
 
@@ -70,16 +123,17 @@ function calcRoom(room, rollWidth, roundTo, offcuts) {
         carpetArea,
         offcutUsed: `Last drop (${fmt(leftoverGap)}m) from offcut [${strip.from}]${surplus}`,
         offcutGenerated: null,
-        orientLabel
+        orientLabel, extended: false, naturalRoomLen: 0
       };
     }
   }
 
-  const totalDrops = Math.ceil(acrossSide / rollWidth);
-  const joints     = totalDrops - 1;
-  const leftoverW  = totalDrops * rollWidth - acrossSide;
-  const roomLen    = roundUp(totalDrops * runSide, roundTo);
-  const carpetArea = roomLen * rollWidth;
+  const totalDrops    = Math.ceil(acrossSide / rollWidth);
+  const joints        = totalDrops - 1;
+  const leftoverW     = totalDrops * rollWidth - acrossSide;
+  const roomLen       = roundUp(totalDrops * runSide, roundTo);
+  const naturalRoomLen = roundUp(totalDrops * naturalRun, roundTo);
+  const carpetArea    = roomLen * rollWidth;
 
   let offcutGenerated = null;
   if (leftoverW > 0.05) {
@@ -87,7 +141,11 @@ function calcRoom(room, rollWidth, roundTo, offcuts) {
     offcuts.push(offcutGenerated);
   }
 
-  return { roomLen, joints, drops: totalDrops, carpetArea, offcutUsed: null, offcutGenerated, orientLabel };
+  return {
+    roomLen, joints, drops: totalDrops, carpetArea,
+    offcutUsed: null, offcutGenerated, orientLabel,
+    extended: wasExtended, naturalRoomLen
+  };
 }
 
 // ─── Main calculate() ─────────────────────────────────────────────────────────
@@ -105,24 +163,31 @@ function calculate() {
   const fittingCost  = parseFloat(document.getElementById('fittingCost').value)  || 0;
   const pricePerLinM = pricePerSqm * rollWidth;
 
-  const offcuts     = []; // fresh each calculation
+  // Build metre rooms array first so we can run optimisation pre-scan
+  const metreRooms = rooms.map(room => ({
+    name:        room.name,
+    length:      room.width  / ppm,
+    width:       room.height / ppm,
+    orientation: room.orientation || 'auto'
+  }));
+
+  // Find optimisation opportunities before processing
+  const optimisations = findOptimisations(metreRooms, rollWidth, roundTo);
+
+  const offcuts     = [];
   let totalLen      = 0;
   let totalJoints   = 0;
   let totalRoomArea = 0;
+  let totalSavingM  = 0;
   let html          = '';
 
-  rooms.forEach(room => {
-    // Convert canvas-pixel room to metre room for calcRoom()
-    const metreRoom = {
-      name:        room.name,
-      length:      room.width  / ppm,  // canvas width px  → length m
-      width:       room.height / ppm,  // canvas height px → width m
-      orientation: room.orientation || 'auto'
-    };
+  metreRooms.forEach((metreRoom, idx) => {
+    const opt    = optimisations[idx];
+    const minRun = opt ? opt.extendTo : 0;
+    const res    = calcRoom(metreRoom, rollWidth, roundTo, offcuts, minRun);
 
-    const res = calcRoom(metreRoom, rollWidth, roundTo, offcuts);
     if (!res) {
-      html += `<div class="room-card"><h3>${room.name}</h3><p style="color:#999">Room has no dimensions.</p></div>`;
+      html += `<div class="room-card"><h3>${metreRoom.name}</h3><p style="color:#999">Room has no dimensions.</p></div>`;
       return;
     }
 
@@ -138,9 +203,23 @@ function calculate() {
     const jointsClass = res.joints === 0 ? 'joints-0' : res.joints === 1 ? 'joints-1' : 'joints-2p';
     const jointsLabel = res.joints === 0 ? '0 \u2014 seamless' : res.joints;
 
+    // Optimisation note for donor room
+    let optNote = '';
+    if (opt && res.extended) {
+      const savingCost = opt.savingM * pricePerLinM;
+      totalSavingM += opt.savingM;
+      const extraLen = res.roomLen - res.naturalRoomLen;
+      optNote = `<div class="info-strip info-green">
+        &#9889; <strong>Optimised:</strong> cut extended by ${fmt(extraLen)}m
+        (${fmt(res.naturalRoomLen)}m &rarr; ${fmt(res.roomLen)}m) so
+        <strong>${opt.beneficiaryName}</strong> can be cut from the offcut
+        ${pricePerSqm > 0 ? `&mdash; saves ${fmtGBP(savingCost)}` : `&mdash; saves ${fmt(opt.savingM)}m of roll`}
+      </div>`;
+    }
+
     html += `
       <div class="room-card">
-        <h3>${room.name} &mdash; ${fmt(metreRoom.length)} &times; ${fmt(metreRoom.width)} m</h3>
+        <h3>${metreRoom.name} &mdash; ${fmt(metreRoom.length)} &times; ${fmt(metreRoom.width)} m</h3>
         <div class="stats">
           <div class="stat ${jointsClass}">
             <div class="lbl">Joints / Seams</div>
@@ -176,6 +255,7 @@ function calculate() {
             <div class="val">${fmtGBP(roomCost)}</div>
           </div>` : ''}
         </div>
+        ${optNote}
         ${res.offcutUsed      ? `<div class="info-strip info-green">&#10003; Offcut reused: ${res.offcutUsed}</div>` : ''}
         ${res.offcutGenerated ? `<div class="info-strip info-amber">&#10003; Offcut stored (${fmt(res.offcutGenerated.width)}&times;${fmt(res.offcutGenerated.length)} m) &mdash; available for later rooms</div>` : ''}
       </div>`;
@@ -184,6 +264,7 @@ function calculate() {
   const totalCarpetCost = totalLen * pricePerLinM;
   const grandTotal      = totalCarpetCost + fittingCost;
   const totalCarpetArea = totalLen * rollWidth;
+  const totalSavingCost = totalSavingM * pricePerLinM;
 
   let summaryHtml = `
     <div class="summary-bar">
@@ -201,6 +282,12 @@ function calculate() {
     }
     summaryHtml += `<div class="sum-stat"><div class="lbl">Effective Price / m&sup2;</div><div class="val">${fmtGBP(totalRoomArea > 0 ? grandTotal / totalRoomArea : 0)}</div></div>`;
   }
+
+  if (totalSavingM > 0) {
+    const savingDisplay = pricePerSqm > 0 ? fmtGBP(totalSavingCost) : `${fmt(totalSavingM)} m`;
+    summaryHtml += `<div class="sum-stat saving-stat"><div class="lbl">&#9889; Optimisation Saving</div><div class="val">${savingDisplay}</div></div>`;
+  }
+
   summaryHtml += `</div>`;
 
   let offcutNote = '';

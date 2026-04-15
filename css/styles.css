@@ -681,6 +681,10 @@ body {
 .info-green { background: #d1fae5; color: #065f46; }
 .info-amber { background: #fef3c7; color: #92400e; }
 
+.saving-stat { background: #16a34a !important; border-radius: 6px; padding: 4px 8px; }
+.saving-stat .lbl { color: #bbf7d0 !important; }
+.saving-stat .val { color: #fff !important; }
+
 /* ── Summary bar ────────────────────────────────────────────────── */
 .summary-bar {
   background: #1e3a5f;
