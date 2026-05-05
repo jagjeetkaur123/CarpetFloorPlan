@@ -124,6 +124,7 @@ body {
 /* Canvas area */
 .canvas-container {
   flex: 1;
+  min-width: 280px;
   position: relative;
   background: white;
   overflow: hidden;
@@ -140,8 +141,9 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   z-index: 10;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 3px;
+  white-space: nowrap;
 }
 
 .toolbar button {
@@ -272,6 +274,128 @@ body {
   font-size: 0.7rem;
   float: none;
 }
+
+.add-room-btn {
+  display: block;
+  width: 100%;
+  padding: 9px;
+  margin-bottom: 10px;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: background 0.2s;
+}
+
+.add-room-btn:hover { background: #1d4ed8; }
+
+/* ── Add Room Modal ─────────────────────────────────────────────────────────── */
+.add-room-modal-content {
+  max-width: 420px;
+  width: 92%;
+  border-radius: 12px;
+  overflow: hidden;
+  padding: 0;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.arm-header {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #fff;
+  padding: 1.1rem 1.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.arm-header .arm-icon { font-size: 1.4rem; }
+.arm-header h3        { margin: 0; font-size: 1.05rem; font-weight: 700; }
+
+.arm-body  { padding: 1.2rem 1.4rem 0.6rem; }
+.arm-footer {
+  padding: 0.8rem 1.4rem 1.2rem;
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+.arm-field {
+  margin-bottom: 0.85rem;
+}
+
+.arm-field label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.3rem;
+}
+
+.arm-field input {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1.5px solid #d1d5db;
+  border-radius: 7px;
+  font-size: 0.95rem;
+  color: #111;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.arm-field input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+}
+
+.arm-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.arm-row .arm-field { flex: 1; }
+
+.arm-error {
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.arm-btn-cancel {
+  padding: 0.55rem 1.1rem;
+  border: 1.5px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.arm-btn-cancel:hover { background: #f3f4f6; }
+
+.arm-btn-add {
+  padding: 0.55rem 1.3rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 700;
+  transition: background 0.15s;
+}
+.arm-btn-add:hover { background: #1d4ed8; }
 
 .calc-btn {
   width: 100%;
@@ -482,21 +606,36 @@ body {
   margin-top: 8px;
 }
 
+.saved-plan-recovery {
+  border: 1px solid #d97706 !important;
+  background: #fff7ed !important;
+  color: #92400e !important;
+  margin-bottom: 10px !important;
+}
+.saved-plan-recovery strong { color: #b45309; }
+.saved-plan-recovery small  { color: #d97706 !important; }
+
 .saved-plan-item {
-  background: #2c3e50;
-  padding: 6px;
-  margin: 4px 0;
-  border-radius: 4px;
-  font-size: 0.75rem;
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 10px 12px;
+  margin: 6px 0;
+  border-radius: 6px;
+  font-size: 0.78rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
 }
+.saved-plan-item strong { color: #f1f5f9; font-size: 0.85rem; }
+.saved-plan-item small  { color: #94a3b8; }
 
 .saved-plan-item button {
-  padding: 3px 8px;
-  font-size: 0.7rem;
+  padding: 5px 12px;
+  font-size: 0.72rem;
   margin-left: 4px;
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
 /* Modal */
@@ -678,8 +817,10 @@ body {
   font-weight: 600;
 }
 
-.info-green { background: #d1fae5; color: #065f46; }
-.info-amber { background: #fef3c7; color: #92400e; }
+.info-green  { background: #d1fae5; color: #065f46; }
+.info-amber  { background: #fef3c7; color: #92400e; }
+.info-teal   { background: #e0f2fe; color: #0c4a6e; border: 1px solid #7dd3fc; }
+.info-purple { background: #f3e8ff; color: #5b21b6; border: 1px solid #c4b5fd; }
 
 .saving-stat { background: #16a34a !important; border-radius: 6px; padding: 4px 8px; }
 .saving-stat .lbl { color: #bbf7d0 !important; }
@@ -720,6 +861,16 @@ body {
   font-size: 0.8rem;
 }
 
+/* ── Restore floor plan button ──────────────────────────────────── */
+.btn-restore {
+  background: #d97706 !important;
+  color: #fff !important;
+  font-size: 0.80rem !important;
+  border: none;
+  margin-top: 2px !important;
+}
+.btn-restore:hover { background: #b45309 !important; }
+
 /* ── Print button ───────────────────────────────────────────────── */
 .btn-print {
   background: #7c3aed;
@@ -736,6 +887,18 @@ body {
 
 /* ── Print-only elements ────────────────────────────────────────── */
 .print-only { display: none; }
+
+/* ── Room card body (screen: normal block; print: flex row) ─────── */
+.room-card-body  { display: block; }
+.room-card-stats { width: 100%; }
+
+/* ── Cut diagram legend ─────────────────────────────────────────── */
+.diagram-title  { font-size: 8pt; font-weight: 700; color: #1e3a5f; margin-bottom: 4px; }
+.diagram-legend { font-size: 7pt; color: #555; margin-top: 5px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.leg-drop       { display: inline-block; width: 14px; height: 10px; background: #dbeafe; border: 1px solid #93c5fd; vertical-align: middle; }
+.leg-drop.leg-alt { background: #bfdbfe; }
+.leg-seam       { display: inline-block; width: 18px; height: 0; border-top: 2px dashed #dc2626; vertical-align: middle; }
+.leg-arrow      { color: #1d4ed8; font-weight: bold; }
 
 /* ── @media print ───────────────────────────────────────────────── */
 @media print {
@@ -758,9 +921,12 @@ body {
   .stat.joints-2p { background: #fee2e2 !important; }
   .info-green     { background: #d1fae5 !important; color: #065f46 !important; }
   .info-amber     { background: #fef3c7 !important; color: #92400e !important; }
+  .info-teal      { background: #e0f2fe !important; color: #0c4a6e !important; }
+  .info-purple    { background: #f3e8ff !important; color: #5b21b6 !important; }
   .offcut-note    { background: #fffbeb !important; border-color: #fcd34d !important; }
   .room-card      { break-inside: avoid; border: 1px solid #ccc !important; }
 
+  /* ── Print header ──────────────────────────────────────────────── */
   .print-header {
     display: flex !important;
     justify-content: space-between;
@@ -769,7 +935,49 @@ body {
     padding-bottom: 0.5rem;
     margin-bottom: 1rem;
   }
+  .print-header h2 { margin: 0; font-size: 13pt; color: #1e3a5f; }
+  .ph-meta         { font-size: 9pt; color: #555; text-align: right; line-height: 1.6; }
 
-  .print-header h2   { margin: 0; font-size: 13pt; color: #1e3a5f; }
-  .ph-meta           { font-size: 9pt; color: #555; text-align: right; line-height: 1.6; }
+  /* ── Print sections (floor plan, schedule) ─────────────────────── */
+  .print-section       { margin-bottom: 1rem; break-inside: avoid; }
+  .print-section-title {
+    font-size: 10pt; font-weight: 700; color: #1e3a5f;
+    border-bottom: 1px solid #1e3a5f; padding-bottom: 3px; margin-bottom: 6px;
+  }
+
+  /* ── Floor plan image ───────────────────────────────────────────── */
+  .print-floor-plan     { text-align: center; }
+  .print-floor-plan img { max-width: 100%; max-height: 220px; object-fit: contain; border: 1px solid #ccc; }
+
+  /* ── Cutting schedule table ─────────────────────────────────────── */
+  .cutting-schedule {
+    width: 100%; border-collapse: collapse; font-size: 8pt;
+  }
+  .cutting-schedule th {
+    background: #1e3a5f !important; color: #fff !important;
+    padding: 4px 6px; text-align: left; font-weight: 600;
+  }
+  .cutting-schedule td { padding: 3px 6px; border-bottom: 1px solid #e5e7eb; }
+  .cutting-schedule tbody tr:nth-child(even) td { background: #f8fafc !important; }
+  .cutting-schedule tfoot td {
+    border-top: 2px solid #1e3a5f; font-weight: 700; font-size: 8pt;
+    background: #f0f4f8 !important;
+  }
+  .sched-total-label { text-align: right; }
+
+  /* ── Room card: stats left, diagram right ───────────────────────── */
+  .room-card-body {
+    display: flex !important;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .room-card-stats  { flex: 1; min-width: 0; }
+  .room-card-diagram {
+    display: block !important;
+    flex-shrink: 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 6px 8px;
+    background: #fafafa !important;
+  }
 }

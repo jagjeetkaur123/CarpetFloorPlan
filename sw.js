@@ -1,4 +1,4 @@
-const CACHE_NAME = 'carpetfloorplan-v1';
+const CACHE_NAME = 'carpetfloorplan-v10';
 const ASSETS = [
   './',
   './index.html',

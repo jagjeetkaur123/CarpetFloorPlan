@@ -16,6 +16,7 @@ let panMode = false;
 let lastPanX, lastPanY;
 let roomCounter = 1;
 let currentPlanId = null;
+let bgImage = null;
 
 // Set drawing mode
 function setMode(m) {
@@ -142,8 +143,16 @@ function updateRoomsList() {
         <option value="length" ${room.orientation === 'length' ? 'selected' : ''}>Carpet Along Length</option>
         <option value="width"  ${room.orientation === 'width'  ? 'selected' : ''}>Carpet Along Width</option>
       </select>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:0.82em;color:#c8d0e0;cursor:pointer;" onclick="event.stopPropagation()">
+        <input type="checkbox" ${room.splitJoin ? 'checked' : ''}
+               onchange="setSplitJoin(${room.id}, this.checked)"
+               onclick="event.stopPropagation()"
+               style="accent-color:#a855f7;width:14px;height:14px;cursor:pointer;">
+        Allow split-join on narrow strip
+        <span style="font-size:0.9em;color:#a78bfa;" title="Assembles the last narrow strip from two shorter pieces joined end-to-end. Saves roll if offcuts are available. Plain/loop-pile carpet only — pattern will not match at seam.">&#9432;</span>
+      </label>
     `;
-    
+
     list.appendChild(div);
   });
 }
@@ -170,6 +179,77 @@ function splitRoom(roomId) {
   alert('Room split back into original rooms!');
 }
 
+function addRoomByDimension() {
+  // Pre-fill name with next room counter
+  document.getElementById('armName').value   = `Room ${roomCounter}`;
+  document.getElementById('armLength').value = '';
+  document.getElementById('armWidth').value  = '';
+  document.getElementById('armError').style.display = 'none';
+
+  const modal = document.getElementById('addRoomModal');
+  modal.style.display = 'flex';
+
+  // Focus the name field, select all so user can type immediately
+  setTimeout(() => {
+    const nameEl = document.getElementById('armName');
+    nameEl.focus();
+    nameEl.select();
+  }, 50);
+}
+
+function closeAddRoomModal() {
+  document.getElementById('addRoomModal').style.display = 'none';
+}
+
+function confirmAddRoom() {
+  const name    = document.getElementById('armName').value.trim() || `Room ${roomCounter}`;
+  const lengthM = parseFloat(document.getElementById('armLength').value);
+  const widthM  = parseFloat(document.getElementById('armWidth').value);
+
+  const errEl = document.getElementById('armError');
+  if (isNaN(lengthM) || lengthM <= 0 || isNaN(widthM) || widthM <= 0) {
+    errEl.textContent = 'Please enter a valid length and width (both must be greater than 0).';
+    errEl.style.display = 'block';
+    return;
+  }
+  errEl.style.display = 'none';
+
+  const ppm = getPxPerMeter();
+
+  // Place new room to the right of the last room, wrapping if needed
+  const padding = 20;
+  let placeX = padding, placeY = padding;
+  if (rooms.length > 0) {
+    const last = rooms[rooms.length - 1];
+    placeX = last.x + last.width + padding;
+    placeY = last.y;
+    const canvasEl = document.getElementById('canvas');
+    if (placeX + lengthM * ppm > (canvasEl.width - panX) / zoom) {
+      placeX = padding;
+      placeY = last.y + last.height + padding;
+    }
+  }
+
+  const room = {
+    id:          Date.now(),
+    name:        name,
+    x:           placeX,
+    y:           placeY,
+    width:       lengthM * ppm,
+    height:      widthM  * ppm,
+    orientation: 'auto',
+    color:       getRandomColor(),
+    doors:       []
+  };
+
+  rooms.push(room);
+  roomCounter++;
+  selectedRoom = room;
+  updateRoomsList();
+  draw();
+  closeAddRoomModal();
+}
+
 function renameRoom(id, name) {
   const room = rooms.find(r => r.id === id);
   if (room) {
@@ -187,9 +267,31 @@ function resizeRoom(id, lengthM, widthM) {
   draw();
 }
 
+function setSplitJoin(id, enabled) {
+  const room = rooms.find(r => r.id === id);
+  if (room) {
+    room.splitJoin = enabled;
+    if (document.getElementById('results').innerHTML.trim() !== '') {
+      calculate();
+    }
+  }
+}
+
 function setOrientation(id, orientation) {
   const room = rooms.find(r => r.id === id);
-  if (room) room.orientation = orientation;
+  if (room) {
+    room.orientation = orientation;
+    draw();
+    // Auto-refresh results if they are already showing
+    if (document.getElementById('results').innerHTML.trim() !== '') {
+      calculate();
+    }
+  }
+}
+
+function setSplitJoin(id, enabled) {
+  const room = rooms.find(r => r.id === id);
+  if (room) room.splitJoin = enabled;
 }
 
 function deleteRoom(id) {
@@ -378,6 +480,25 @@ function clearAll() {
     draw();
     document.getElementById('results').innerHTML = '';
   }
+}
+
+// Background image
+function loadBgImage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => { bgImage = img; draw(); };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearBgImage() {
+  bgImage = null;
+  document.getElementById('bgImageInput').value = '';
+  draw();
 }
 
 // Initialize
