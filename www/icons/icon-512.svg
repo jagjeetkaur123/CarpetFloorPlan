@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="80" fill="#2c3e50"/>
+  <!-- Floor grid -->
+  <rect x="48" y="48" width="416" height="416" rx="20" fill="#34495e"/>
+  <!-- Grid lines -->
+  <line x1="48" y1="186" x2="464" y2="186" stroke="#4a6278" stroke-width="4"/>
+  <line x1="48" y1="326" x2="464" y2="326" stroke="#4a6278" stroke-width="4"/>
+  <line x1="186" y1="48" x2="186" y2="464" stroke="#4a6278" stroke-width="4"/>
+  <line x1="326" y1="48" x2="326" y2="464" stroke="#4a6278" stroke-width="4"/>
+  <!-- Room outline -->
+  <rect x="72" y="72" width="228" height="168" rx="8" fill="none" stroke="#3498db" stroke-width="10"/>
+  <!-- Second room -->
+  <rect x="72" y="272" width="140" height="140" rx="8" fill="none" stroke="#e67e22" stroke-width="10"/>
+  <!-- Carpet texture dots -->
+  <circle cx="140" cy="148" r="8" fill="#3498db" opacity="0.6"/>
+  <circle cx="196" cy="148" r="8" fill="#3498db" opacity="0.6"/>
+  <circle cx="252" cy="148" r="8" fill="#3498db" opacity="0.6"/>
+  <circle cx="140" cy="204" r="8" fill="#3498db" opacity="0.6"/>
+  <circle cx="196" cy="204" r="8" fill="#3498db" opacity="0.6"/>
+  <circle cx="252" cy="204" r="8" fill="#3498db" opacity="0.6"/>
+</svg>

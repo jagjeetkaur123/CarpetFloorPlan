@@ -19,7 +19,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Optional: if you add npm later
+# Dependencies
 node_modules/
 package-lock.json
 yarn.lock
+
+# Capacitor build artifacts (native project source files are kept)
+android/.gradle/
+android/app/build/
+android/build/
+ios/App/Pods/
+ios/App/.build/
+ios/App/xcuserdata/
+ios/App/DerivedData/

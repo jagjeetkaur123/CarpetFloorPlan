@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Carpet Floor Plan</string>
+    <string name="title_activity_main">Carpet Floor Plan</string>
+    <string name="package_name">com.jag1910.carpetplanner</string>
+    <string name="custom_url_scheme">com.jag1910.carpetplanner</string>
+</resources>
