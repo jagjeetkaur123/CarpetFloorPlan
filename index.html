@@ -13,9 +13,15 @@
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
+  <!-- Tablet overlay backdrop -->
+  <div class="tab-overlay" id="tabOverlay" onclick="closeTabPanels()"></div>
+  <!-- Tablet sidebar toggle buttons -->
+  <button class="tab-toggle-left" id="tabToggleLeft" onclick="toggleTabPanel('sidebar')" aria-label="Tools">🛠️</button>
+  <button class="tab-toggle-right" id="tabToggleRight" onclick="toggleTabPanel('right-panel')" aria-label="Rooms">📋</button>
+
   <div class="app-container">
     <!-- Left Sidebar -->
-    <div class="sidebar">
+    <div class="sidebar" id="tabSidebar">
       <h2>🛠️ Tools</h2>
       
       <div class="save-section">
@@ -117,6 +123,7 @@
           <input type="file" id="bgImageInput" accept="image/*,.pdf" style="display:none"
                  onchange="loadBgImage(this)">
         </label>
+        <button class="btn" style="margin-left:8px;background:#106eea;" onclick="autoImportRooms()">⤴️ Auto Import Rooms</button>
         <div class="input-row" style="margin-top:6px;">
           <label>Opacity:</label>
           <input type="range" id="bgOpacity" min="10" max="90" value="35"
@@ -159,7 +166,7 @@
     </div>
 
     <!-- Right Panel -->
-    <div class="right-panel">
+    <div class="right-panel" id="tabRightPanel">
       <h2>📋 Rooms</h2>
 
       <div class="calc-settings no-print">
@@ -260,12 +267,48 @@
   <script src="js/carpet-calculator.js"></script>
   <script src="js/canvas.js"></script>
   <script src="js/storage.js"></script>
+  <!-- OpenCV and Tesseract for floorplan extraction -->
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2/dist/tesseract.min.js"></script>
+  <script src="js/floorplan-extract.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js');
       });
     }
+
+    // ── Tablet panel toggles ──────────────────────────────────────────
+    function isTablet() {
+      return window.innerWidth >= 641 && window.innerWidth <= 1024;
+    }
+    function toggleTabPanel(panelClass) {
+      if (!isTablet()) return;
+      const sidebar    = document.getElementById('tabSidebar');
+      const rightPanel = document.getElementById('tabRightPanel');
+      const overlay    = document.getElementById('tabOverlay');
+      const isLeft     = panelClass === 'sidebar';
+      const panel      = isLeft ? sidebar : rightPanel;
+      const other      = isLeft ? rightPanel : sidebar;
+
+      const opening = !panel.classList.contains('tab-open');
+      other.classList.remove('tab-open');
+      panel.classList.toggle('tab-open', opening);
+      overlay.classList.toggle('tab-open', opening);
+    }
+    function closeTabPanels() {
+      document.getElementById('tabSidebar').classList.remove('tab-open');
+      document.getElementById('tabRightPanel').classList.remove('tab-open');
+      document.getElementById('tabOverlay').classList.remove('tab-open');
+    }
+    // Hide toggle buttons on non-tablet sizes
+    function updateTabToggles() {
+      const show = isTablet();
+      document.getElementById('tabToggleLeft').style.display  = show ? 'flex' : 'none';
+      document.getElementById('tabToggleRight').style.display = show ? 'flex' : 'none';
+    }
+    window.addEventListener('resize', updateTabToggles);
+    window.addEventListener('load',   updateTabToggles);
   </script>
 </body>
 </html>

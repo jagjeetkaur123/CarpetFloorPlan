@@ -86,7 +86,11 @@ canvas.addEventListener('touchmove', (e) => {
 canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
   _lastPinchDist = null;
-  canvas.dispatchEvent(new MouseEvent('mouseup', {}));
+  const touch = e.changedTouches[0];
+  canvas.dispatchEvent(new MouseEvent('mouseup', {
+    clientX: touch.clientX,
+    clientY: touch.clientY
+  }));
 });
 
 // Mouse events

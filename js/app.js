@@ -496,6 +496,29 @@ function clearBgImage() {
   draw();
 }
 
+// Auto import rooms from selected background image using OpenCV/Tesseract
+async function autoImportRooms() {
+  const input = document.getElementById('bgImageInput');
+  const file = input.files[0];
+  if (!file) { alert('Please select a background image first (Upload Image).'); return; }
+
+  try {
+    // show brief progress
+    const orig = document.getElementById('info');
+    const old = orig.textContent;
+    orig.textContent = 'Detecting rooms — please wait...';
+    const res = await window.importDetectedRooms(file, { assignNames: true });
+    orig.textContent = `Imported ${res.created.length} rooms.`; 
+    updateRoomsList(); draw();
+    console.log('Auto-import result:', res);
+    setTimeout(()=> orig.textContent = old, 3000);
+    alert(`Imported ${res.created.length} rooms. Check the right panel to adjust names/dimensions.`);
+  } catch (err) {
+    console.error(err);
+    alert('Auto import failed: ' + err.message);
+  }
+}
+
 // Initialize
 updateInfo();
 
