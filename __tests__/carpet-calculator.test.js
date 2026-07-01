@@ -86,8 +86,24 @@ describe('calcRoom', () => {
     const room = { length: 5, width: 6, orientation: 'length' };
     const offcuts = [{ from: 'Donor', width: 2.5, length: 5 }];
     const result = calcRoom(room, 4, 0.1, offcuts);
-    expect(result.offcutUsed).toContain('Last drop');
+    expect(result.offcutUsed).toContain('from offcut');
     expect(result.drops).toBe(2);
+  });
+
+  test('uses multiple offcuts to cover a narrow one-drop room', () => {
+    const room = { length: 8, width: 1, orientation: 'length', splitJoin: true };
+    const offcuts = [
+      { from: 'Room1', width: 1, length: 5 },
+      { from: 'Room2', width: 1, length: 5 },
+    ];
+    const result = calcRoom(room, 4, 0.1, offcuts);
+    expect(result.offcutUsed).toContain('Full room from combined offcuts');
+    expect(result.joints).toBe(1);
+    expect(result.roomLen).toBe(0);
+    expect(result.carpetArea).toBeCloseTo(8);
+    expect(offcuts.length).toBe(1);
+    expect(offcuts[0].width).toBeCloseTo(1);
+    expect(offcuts[0].length).toBeCloseTo(2);
   });
 });
 

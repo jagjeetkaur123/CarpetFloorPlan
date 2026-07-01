@@ -33,6 +33,22 @@
     });
   }
 
+  async function reportOpenCvStatus() {
+    console.log('OpenCV: loading status check...');
+    try {
+      await waitForOpenCv();
+      console.log('OpenCV is ready:', typeof cv !== 'undefined' && cv && !!cv.Mat);
+    } catch (err) {
+      console.error('OpenCV failed to load:', err);
+    }
+  }
+
+  if (document.readyState === 'complete') {
+    reportOpenCvStatus();
+  } else {
+    window.addEventListener('load', reportOpenCvStatus);
+  }
+
   async function doOCROnCanvas(canvas) {
     if (typeof Tesseract === 'undefined') return { text: '', words: [] };
     try {

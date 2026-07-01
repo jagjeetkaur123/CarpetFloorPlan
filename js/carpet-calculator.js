@@ -125,6 +125,119 @@ function findOptimisations(metreRooms, rollWidth, roundTo) {
   return opts;
 }
 
+function cloneOffcuts(offcuts) {
+  return offcuts.map(o => ({ from: o.from, width: o.width, length: o.length }));
+}
+
+function simulateRoomPlan(rooms, rollWidth, roundTo, wastePerDrop) {
+  const offcuts = [];
+  const results = [];
+  let totalLen = 0;
+  let totalRollArea = 0;
+  let totalOffcutArea = 0;
+  let totalJoints = 0;
+  let totalCarpetArea = 0;
+
+  rooms.forEach(room => {
+    const res = calcRoom(room, rollWidth, roundTo, offcuts, 0, wastePerDrop);
+    results.push(res);
+    if (!res) return;
+    totalLen += res.roomLen;
+    totalRollArea += res.rollAreaUsed || 0;
+    totalOffcutArea += res.offcutUsedArea || 0;
+    totalJoints += res.joints;
+    totalCarpetArea += res.carpetArea;
+  });
+
+  return { results, totalLen, totalRollArea, totalOffcutArea, totalJoints, totalCarpetArea, offcuts };
+}
+
+function chooseBestOrientationSequence(rooms, rollWidth, roundTo, wastePerDrop) {
+  const chosenRooms = rooms.map(room => ({ ...room }));
+  const offcuts = [];
+
+  chosenRooms.forEach(room => {
+    if (!room.orientation || room.orientation === 'auto') {
+      const candidates = ['length', 'width'].map(orientation => {
+        const simRoom = { ...room, orientation };
+        const simOffcuts = cloneOffcuts(offcuts);
+        const res = calcRoom(simRoom, rollWidth, roundTo, simOffcuts, 0, wastePerDrop);
+        return res ? { orientation, res } : null;
+      }).filter(Boolean);
+
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => {
+          if (a.res.rollAreaUsed !== b.res.rollAreaUsed) return a.res.rollAreaUsed - b.res.rollAreaUsed;
+          if (a.res.offcutUsedArea !== b.res.offcutUsedArea) return b.res.offcutUsedArea - a.res.offcutUsedArea;
+          if (a.res.joints !== b.res.joints) return a.res.joints - b.res.joints;
+          return a.res.roomLen - b.res.roomLen;
+        });
+        room.orientation = candidates[0].orientation;
+      }
+    }
+
+    calcRoom(room, rollWidth, roundTo, offcuts, 0, wastePerDrop);
+  });
+
+  return chosenRooms;
+}
+
+function chooseBestRoomPlan(metreRooms, rollWidth, roundTo, wastePerDrop) {
+  const baseRooms = metreRooms.map((room, idx) => ({ ...room, origIdx: idx }));
+
+  const orderings = [
+    {
+      key: 'potentialOffcut',
+      sortFn: (a, b) => {
+        const ia = getRoomOrientInfo(a, rollWidth);
+        const ib = getRoomOrientInfo(b, rollWidth);
+        const offcutA = (ia.totalDrops * rollWidth - ia.acrossSide) * ia.runSide;
+        const offcutB = (ib.totalDrops * rollWidth - ib.acrossSide) * ib.runSide;
+        return offcutB - offcutA;
+      }
+    },
+    {
+      key: 'roomArea',
+      sortFn: (a, b) => (b.length * b.width) - (a.length * a.width)
+    },
+    {
+      key: 'narrowAcross',
+      sortFn: (a, b) => {
+        const ia = getRoomOrientInfo(a, rollWidth);
+        const ib = getRoomOrientInfo(b, rollWidth);
+        return ia.acrossSide - ib.acrossSide;
+      }
+    },
+    {
+      key: 'longRun',
+      sortFn: (a, b) => {
+        const ia = getRoomOrientInfo(a, rollWidth);
+        const ib = getRoomOrientInfo(b, rollWidth);
+        return ib.runSide - ia.runSide;
+      }
+    },
+    {
+      key: 'input',
+      sortFn: (a, b) => a.origIdx - b.origIdx
+    }
+  ];
+
+  const candidates = orderings.map(order => {
+    const orderedRooms = baseRooms.slice().sort(order.sortFn).map(room => ({ ...room }));
+    const orientedRooms = chooseBestOrientationSequence(orderedRooms, rollWidth, roundTo, wastePerDrop);
+    const sim = simulateRoomPlan(orientedRooms, rollWidth, roundTo, wastePerDrop);
+    return { key: order.key, orderedRooms: orientedRooms, sim };
+  });
+
+  candidates.sort((a, b) => {
+    if (a.sim.totalLen !== b.sim.totalLen) return a.sim.totalLen - b.sim.totalLen;
+    if (a.sim.totalRollArea !== b.sim.totalRollArea) return a.sim.totalRollArea - b.sim.totalRollArea;
+    return a.sim.totalJoints - b.sim.totalJoints;
+  });
+
+  return candidates[0] || { orderedRooms: baseRooms, sim: simulateRoomPlan(baseRooms, rollWidth, roundTo, wastePerDrop), key: 'fallback' };
+}
+
 // ─── Cross-cut / split-join helper ───────────────────────────────────────────
 // Instead of buying a full-length drop for the narrow last strip, buy shorter
 // pieces (= narrowStripWidth metres off the roll) and rotate them 90° to
@@ -138,6 +251,54 @@ function calcCrossCut(narrowStrip, runSide, rollWidth, roundTo) {
   const saved        = parseFloat((standardLen - crossCutLen).toFixed(3));
   if (saved <= 0.01) return null;
   return { numPieces, crossCutLen, saved, extraJoins: numPieces - 1 };
+}
+
+function tryBuildFromOffcuts(offcuts, requiredWidth, requiredLength) {
+  if (requiredWidth <= 0.001 || requiredLength <= 0.001) return null;
+
+  const candidates = offcuts
+    .map((strip, index) => ({ strip, index }))
+    .filter(item => item.strip.width >= requiredWidth && item.strip.length > 0)
+    .sort((a, b) => {
+      if (b.strip.length !== a.strip.length) return b.strip.length - a.strip.length;
+      return a.strip.width - b.strip.width;
+    });
+
+  let remaining = requiredLength;
+  const selected = [];
+  for (const item of candidates) {
+    if (remaining <= 0) break;
+    selected.push(item);
+    remaining -= item.strip.length;
+  }
+  if (remaining > 0) return null;
+
+  const leftovers = [];
+  let remainingLen = requiredLength;
+
+  selected
+    .map(item => item.index)
+    .sort((a, b) => b - a)
+    .forEach(idx => offcuts.splice(idx, 1));
+
+  for (const { strip } of selected) {
+    const useLen = Math.min(strip.length, remainingLen);
+    remainingLen -= useLen;
+
+    if (strip.width - requiredWidth > 0.05) {
+      leftovers.push({ from: strip.from, width: strip.width - requiredWidth, length: strip.length });
+    }
+    if (strip.length - useLen > 0.05) {
+      leftovers.push({ from: strip.from, width: requiredWidth, length: strip.length - useLen });
+    }
+  }
+
+  leftovers.forEach(piece => offcuts.push(piece));
+
+  return {
+    pieceCount: selected.length,
+    usedFrom: selected.map(item => item.strip.from),
+  };
 }
 
 // ─── Core room calculator ─────────────────────────────────────────────────────
@@ -214,10 +375,13 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
     if (surplusW > 0.05) offcuts.push({ from: strip.from, width: surplusW, length: strip.length });
     const surplus  = surplusW > 0.05 ? `, ${fmt(surplusW)}m surplus re-stored` : '';
     const altNote  = bestFullAlt ? ' ↻ orientation swapped to use offcut' : '';
+    const fullArea = effAcross * effRun;
     return {
       roomLen: 0, joints: 0, drops: 1,
-      carpetArea: effAcross * effRun,
+      carpetArea: fullArea,
       offcutUsed: `Entire room from offcut [${strip.from}]${surplus}${altNote}`,
+      offcutUsedArea: fullArea,
+      rollAreaUsed: 0,
       offcutGenerated: null,
       orientLabel: effLabel, extended: false, naturalRoomLen: 0
     };
@@ -235,15 +399,40 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
     if (surplusW > 0.05) offcuts.push({ from: strip.from, width: surplusW, length: strip.length });
     const roomLen    = roundUp(effFull * (effRunSide + wastePerDrop), roundTo);
     const carpetArea = effFull * rollWidth * effRunSide + effGap * effRunSide;
+    const offcutArea = effGap * effRunSide;
     const surplus    = surplusW > 0.05 ? `, ${fmt(surplusW)}m surplus re-stored` : '';
     const altNote    = bestPartAlt ? ' ↻ orientation swapped to use offcut' : '';
+    const rollAreaUsed = parseFloat((carpetArea - offcutArea).toFixed(3));
     return {
       roomLen, joints: effFull, drops: effFull + 1,
       carpetArea,
-      offcutUsed: `Last drop (${fmt(effGap)}m) from offcut [${strip.from}]${surplus}${altNote}`,
+      offcutUsed: `Last narrow strip only (${fmt(effGap)}m) from offcut [${strip.from}]${surplus}${altNote}`,
+      offcutUsedArea: offcutArea,
+      rollAreaUsed,
       offcutGenerated: null,
       orientLabel: effLabel, extended: false, naturalRoomLen: 0
     };
+  }
+
+  // Use multiple offcuts end-to-end for a narrow one-drop room when split/join is enabled.
+  if (room.splitJoin && fullDrops === 0 && acrossSide <= rollWidth) {
+    const combo = tryBuildFromOffcuts(offcuts, acrossSide, runSide);
+    if (combo && combo.pieceCount > 1) {
+      const fullArea = runSide * acrossSide;
+      return {
+        roomLen: 0,
+        joints: combo.pieceCount - 1,
+        drops: 1,
+        carpetArea: fullArea,
+        offcutUsed: `Full room from combined offcuts [${combo.usedFrom.join(', ')}]`,
+        offcutUsedArea: fullArea,
+        rollAreaUsed: 0,
+        offcutGenerated: null,
+        orientLabel,
+        extended: false,
+        naturalRoomLen: 0
+      };
+    }
   }
 
   const totalDrops     = Math.ceil(acrossSide / rollWidth);
@@ -270,7 +459,7 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
 
       return {
         roomLen, joints: joints + xc.extraJoins, drops: totalDrops, carpetArea,
-        offcutUsed: null, offcutGenerated, orientLabel,
+        offcutUsed: null, offcutUsedArea: 0, rollAreaUsed: carpetArea, offcutGenerated, orientLabel,
         extended: wasExtended, naturalRoomLen,
         narrowStripW: leftoverGap, runSideUsed: runSide,
         splitJoin: xc,
@@ -290,9 +479,10 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
 
   const narrowStripW = leftoverGap > 0.001 ? leftoverGap : 0;
 
+  const rollAreaUsed = parseFloat((carpetArea - 0).toFixed(3));
   return {
     roomLen, joints, drops: totalDrops, carpetArea,
-    offcutUsed: null, offcutGenerated, orientLabel,
+    offcutUsed: null, offcutUsedArea: 0, rollAreaUsed, offcutGenerated, orientLabel,
     extended: wasExtended, naturalRoomLen,
     narrowStripW, runSideUsed: runSide,
     splitJoin: null,
@@ -368,20 +558,11 @@ function calculate() {
     splitJoin:   !!room.splitJoin,
   }));
 
-  // Smart calculation order: rooms that generate larger offcuts are processed first
-  // so the offcut cascade reaches the most rooms. Results are stored by original index
-  // and then displayed in the user's room list order.
-  const calcOrder = [...metreRooms.keys()].sort((a, b) => {
-    const ra = metreRooms[a], rb = metreRooms[b];
-    if (!ra.length || !ra.width) return 1;
-    if (!rb.length || !rb.width) return -1;
-    const ia = getRoomOrientInfo(ra, rollWidth);
-    const ib = getRoomOrientInfo(rb, rollWidth);
-    return (ib.totalDrops * rollWidth - ib.acrossSide) - (ia.totalDrops * rollWidth - ia.acrossSide);
-  });
+  // Try several installer-like room orders and choose the one that uses the least roll.
+  const plan = chooseBestRoomPlan(metreRooms, rollWidth, roundTo, wastePerCut);
+  let orderedRooms = plan.orderedRooms;
 
-  // Run optimisation pre-scan in the same smart order so donor→beneficiary pairs align
-  const orderedRooms = calcOrder.map(i => metreRooms[i]);
+  // Run optimisation pre-scan in the chosen room order so donor→beneficiary pairs align
   const orderedOpts  = findOptimisations(orderedRooms, rollWidth, roundTo);
 
   // Capture floor plan from canvas for the print report
@@ -390,10 +571,10 @@ function calculate() {
 
   const offcuts     = [];
   const calcResults = new Array(metreRooms.length); // indexed by original position
-  calcOrder.forEach((origIdx, orderPos) => {
+  orderedRooms.forEach((room, orderPos) => {
     const opt    = orderedOpts[orderPos];
     const minRun = opt ? opt.extendTo : 0;
-    calcResults[origIdx] = calcRoom(metreRooms[origIdx], rollWidth, roundTo, offcuts, minRun, wastePerCut);
+    calcResults[room.origIdx] = calcRoom(room, rollWidth, roundTo, offcuts, minRun, wastePerCut);
   });
 
   let totalLen      = 0;
@@ -405,7 +586,8 @@ function calculate() {
 
   metreRooms.forEach((metreRoom, idx) => {
     const res    = calcResults[idx];
-    const opt    = orderedOpts[calcOrder.indexOf(idx)];
+    const orderPos = orderedRooms.findIndex(r => r.origIdx === idx);
+    const opt    = orderPos >= 0 ? orderedOpts[orderPos] : null;
 
     if (!res) {
       html += `<div class="room-card"><h3>${metreRoom.name}</h3><p style="color:#999">Room has no dimensions.</p></div>`;
@@ -502,6 +684,16 @@ function calculate() {
                 <div class="lbl">Carpet Cut Area</div>
                 <div class="val">${fmt(carpetArea)} m&sup2;</div>
               </div>
+              <div class="stat">
+                <div class="lbl">Roll Area Used</div>
+                <div class="val">${fmt(res.rollAreaUsed || 0)} m&sup2;</div>
+              </div>
+              ${res.offcutUsedArea > 0 ? `
+              <div class="stat">
+                <div class="lbl">Offcut Used</div>
+                <div class="val">${fmt(res.offcutUsedArea)} m&sup2;</div>
+              </div>
+              ` : ''}
               <div class="stat">
                 <div class="lbl">Offcut Waste</div>
                 <div class="val">${fmt(wasteArea)} m&sup2;</div>

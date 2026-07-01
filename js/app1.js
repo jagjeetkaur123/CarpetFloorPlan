@@ -20,6 +20,10 @@ let bgImage = null;
 let editingDoor = null;
 let editingRoom = null;
 
+// Polygon drawing state
+let polygonPoints = [];   // world-space points placed so far
+let polygonSnapping = false; // true when cursor is near first point (close hint)
+
 // Set drawing mode
 function setMode(m) {
   mode = m;
@@ -28,9 +32,19 @@ function setMode(m) {
   document.getElementById('btnDoor').classList.remove('active');
   document.getElementById('btnFreehand').classList.remove('active');
   document.getElementById('btnErase').classList.remove('active');
-  
+  if (document.getElementById('btnPolygon')) document.getElementById('btnPolygon').classList.remove('active');
+
+  // Cancel any in-progress polygon when switching away
+  if (mode === 'polygon' && m !== 'polygon') {
+    polygonPoints = [];
+    if (typeof draw === 'function') draw();
+  }
+
   if (m === 'draw') {
     document.getElementById('btnDraw').classList.add('active');
+    canvas.style.cursor = 'crosshair';
+  } else if (m === 'polygon') {
+    if (document.getElementById('btnPolygon')) document.getElementById('btnPolygon').classList.add('active');
     canvas.style.cursor = 'crosshair';
   } else if (m === 'select') {
     document.getElementById('btnSelect').classList.add('active');
@@ -56,6 +70,10 @@ function updateInfo() {
   
   if (mode === 'draw') {
     info.textContent = 'Click and drag to draw rooms';
+  } else if (mode === 'polygon') {
+    info.textContent = polygonPoints.length === 0
+      ? 'Click to place corners — double-click or click first point to close shape'
+      : `Polygon: ${polygonPoints.length} point(s) — double-click or click first point to finish (Esc to cancel)`;
   } else if (mode === 'select') {
     info.textContent = 'Click and drag rooms to move them';
   } else if (mode === 'door') {
@@ -96,6 +114,9 @@ function updateRoomsList() {
     
     const lengthM = (room.width / ppm).toFixed(2);
     const widthM = (room.height / ppm).toFixed(2);
+    const areaM2 = room.isPolygon
+      ? (polygonArea(room.points) / (ppm * ppm)).toFixed(2)
+      : null;
     
     let doorsHTML = '';
     if (room.doors.length > 0) {
@@ -129,7 +150,9 @@ function updateRoomsList() {
              onclick="event.stopPropagation()">
       ${combinedBadge}
       <div class="room-dims">
-        📏
+        ${room.isPolygon
+          ? `📐 <span style="color:#ecf0f1;font-size:0.85em;">Area: ${areaM2} m² &nbsp;(BBox: ${lengthM}×${widthM} m)</span>`
+          : `📏
         <label style="color:#ecf0f1;font-size:0.85em;">L:</label>
         <input type="number" class="dim-input" step="0.01" min="0.1" value="${lengthM}"
                onchange="resizeRoom(${room.id}, parseFloat(this.value), parseFloat(this.parentNode.querySelector('.dim-w').value))"
@@ -137,7 +160,7 @@ function updateRoomsList() {
         <label style="color:#ecf0f1;font-size:0.85em;">W:</label>
         <input type="number" class="dim-input dim-w" step="0.01" min="0.1" value="${widthM}"
                onchange="resizeRoom(${room.id}, parseFloat(this.parentNode.querySelector('.dim-input').value), parseFloat(this.value))"
-               onclick="event.stopPropagation()">m
+               onclick="event.stopPropagation()">m`}
       </div>
       ${doorsHTML}
       <select onchange="setOrientation(${room.id}, this.value)"
@@ -498,6 +521,81 @@ function straightenPath(points) {
 
   return straightened;
 }
+
+
+// ── Polygon room helpers ──────────────────────────────────────────────────────
+
+// Signed area via shoelace (negative = CW winding)
+function polygonSignedArea(pts) {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  return a / 2;
+}
+
+function polygonArea(pts) { return Math.abs(polygonSignedArea(pts)); }
+
+function polygonCentroid(pts) {
+  let cx = 0, cy = 0;
+  const a = polygonSignedArea(pts);
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const f = pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+    cx += (pts[i].x + pts[j].x) * f;
+    cy += (pts[i].y + pts[j].y) * f;
+  }
+  return { x: cx / (6 * a), y: cy / (6 * a) };
+}
+
+function polygonBBox(pts) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  pts.forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); });
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+// Point-in-polygon (ray casting)
+function pointInPolygon(px, py, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function finalisePolygon(pts) {
+  if (pts.length < 3) return;
+  // Ensure CCW winding so area is positive
+  if (polygonSignedArea(pts) < 0) pts = pts.slice().reverse();
+  const bb = polygonBBox(pts);
+  const room = {
+    id: Date.now(),
+    name: `Room ${roomCounter++}`,
+    points: pts,           // polygon path in world coords
+    isPolygon: true,
+    // rect fields derived from bounding box (for carpet calc compat)
+    x: bb.x, y: bb.y, width: bb.width, height: bb.height,
+    orientation: 'auto',
+    color: getRandomColor(),
+    doors: []
+  };
+  rooms.push(room);
+  selectedRoom = room;
+  polygonPoints = [];
+  updateRoomsList();
+  draw();
+}
+
+// Cancel polygon in progress (Escape key)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && mode === 'polygon' && polygonPoints.length > 0) {
+    polygonPoints = [];
+    draw();
+    updateInfo();
+  }
+});
 
 // Zoom controls
 function zoomIn() {

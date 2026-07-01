@@ -37,71 +37,11 @@
       <div class="section">
         <h3>Drawing Mode</h3>
         <button class="btn active" id="btnDraw" onclick="setMode('draw')">
-          Draw Room
+          ⬜ Draw Room
         </button>
-        <canvas id="roomCanvas" width="800" height="400" style="border:1px solid #ccc;"></canvas>
-        <script>
-        let mode = 'draw';
-        let isDrawing = false;
-        let startX = 0;
-        let startY = 0;
-
-        const canvas = document.getElementById('roomCanvas');
-        const ctx = canvas.getContext('2d');
-
-        function setMode(newMode) {
-          mode = newMode;
-          // You can toggle button styles here if you add more modes later
-          // console.log('Mode set to:', mode);
-          }
-          canvas.addEventListener('mousedown', (e) => {
-            if (mode !== 'draw') return;
-            const rect = canvas.getBoundingClientRect();
-            startX = e.clientX - rect.left;
-            startY = e.clientY - rect.top;
-            isDrawing = true;
-          });
-          canvas.addEventListener('mousemove', (e) => {
-             if (!isDrawing || mode !== 'draw') return;
-
-    const rect = canvas.getBoundingClientRect();
-    const currentX = e.clientX - rect.left;
-    const currentY = e.clientY - rect.top;
-
-    const width = currentX - startX;
-    const height = currentY - startY;
-
-    // Clear preview
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw preview rectangle (room)
-    ctx.strokeStyle = '#007bff';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(startX, startY, width, height);
-  });
-
-  canvas.addEventListener('mouseup', (e) => {
-    if (!isDrawing || mode !== 'draw') return;
-
-    const rect = canvas.getBoundingClientRect();
-    const endX = e.clientX - rect.left;
-    const endY = e.clientY - rect.top;
-
-    const width = endX - startX;
-    const height = endY - startY;
-
-    isDrawing = false;
-
-    // Final room rectangle
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(startX, startY, width, height);
-
-    console.log('Room drawn with width:', Math.abs(width), 'height:', Math.abs(height));
-  });
-</script>
-
-
+        <button class="btn" id="btnPolygon" onclick="setMode('polygon')" title="Click corners to draw any shape — L-shaped, T-shaped, etc. Double-click or click first point to finish.">
+          🔷 Custom Shape
+        </button>
         <button class="btn" id="btnSelect" onclick="setMode('select')">
           ↖️ Select/Move
         </button>
@@ -359,9 +299,9 @@
     </button>
   </div>
 
-  <script src="js/app.js"></script>
+  <script src="js/app4.js"></script>
   <script src="js/carpet-calculator.js"></script>
-  <script src="js/canvas.js"></script>
+  <script src="js/canvas4.js"></script>
   <script src="js/storage.js"></script>
   <!-- OpenCV and Tesseract for floorplan extraction -->
   <script src="https://docs.opencv.org/4.x/opencv.js"></script>
