@@ -552,11 +552,19 @@ function calculate() {
   // Build metre rooms array first so we can run optimisation pre-scan
   const metreRooms = rooms.map(room => ({
     name:        room.name,
-    length:      room.width  / ppm,
-    width:       room.height / ppm,
+    length:      room._ocrLength || room.width  / ppm,
+    width:       room._ocrWidth  || room.height / ppm,
     orientation: room.orientation || 'auto',
     splitJoin:   !!room.splitJoin,
   }));
+
+  // Debug log for OCR-imported rooms
+  rooms.forEach((room, idx) => {
+    if (room._ocrLength || room._ocrWidth) {
+      const mr = metreRooms[idx];
+      console.log(`[CALC ROOM ${idx} "${room.name}"] Using OCR: length=${mr.length.toFixed(2)}m width=${mr.width.toFixed(2)}m`);
+    }
+  });
 
   // Try several installer-like room orders and choose the one that uses the least roll.
   const plan = chooseBestRoomPlan(metreRooms, rollWidth, roundTo, wastePerCut);

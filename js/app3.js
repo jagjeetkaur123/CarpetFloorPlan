@@ -84,7 +84,7 @@ function updateInfo() {
     info.textContent = 'Click on freehand drawings to erase them';
   }
 }
- 
+
 // Get pixels per meter
 function getPxPerMeter() {
   return parseFloat(document.getElementById('pxPerMeter').value);
@@ -542,6 +542,7 @@ function polygonCentroid(pts) {
     const j = (i + 1) % pts.length;
     const f = pts[i].x * pts[j].y - pts[j].x * pts[i].y;
     cx += (pts[i].x + pts[j].x) * f;
+    
     cy += (pts[i].y + pts[j].y) * f;
   }
   return { x: cx / (6 * a), y: cy / (6 * a) };

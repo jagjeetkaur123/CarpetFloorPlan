@@ -254,25 +254,47 @@
 
       // attempt to associate OCR numbers
       const centerX = x + w/2, centerY = y + h/2;
-      const nearbyNums = numericTokens.filter(t => Math.hypot(t.cx - centerX, t.cy - centerY) < Math.max(w,h) * 0.9);
-      const nums = nearbyNums.map(n=>n.num);
+      const nearbyNums = numericTokens
+        .map(t => ({ ...t, dist: Math.hypot(t.cx - centerX, t.cy - centerY) }))
+        .filter(t => t.dist < Math.max(w, h) * 0.9)
+        .sort((a, b) => a.dist - b.dist);
+      const nums = nearbyNums.slice(0, 2).map(n => n.num);
 
-      // if two numbers, try to set dims (larger -> length)
       const ppm = parseFloat(document.getElementById('pxPerMeter').value) || 40;
       let finalW = w, finalH = h;
+      let detectedLength = null, detectedWidth = null;
       if (nums.length >= 2) {
-        const s = nums.slice().sort((a,b)=>b-a);
-        finalW = s[0] * ppm; // larger
-        finalH = s[1] * ppm; // smaller
+        const [n1, n2] = nums;
+        const bboxWm = w / ppm;
+        const bboxHm = h / ppm;
+        const scoreA = Math.abs(n1 - bboxWm) + Math.abs(n2 - bboxHm);
+        const scoreB = Math.abs(n1 - bboxHm) + Math.abs(n2 - bboxWm);
+        if (scoreA <= scoreB) {
+          finalW = n1 * ppm;
+          finalH = n2 * ppm;
+          detectedLength = n1;
+          detectedWidth = n2;
+        } else {
+          finalW = n2 * ppm;
+          finalH = n1 * ppm;
+          detectedLength = n2;
+          detectedWidth = n1;
+        }
+        console.log(`[IMPORT ROOM ${i}] OCR nums: [${n1}, ${n2}] bbox: ${bboxWm.toFixed(2)}×${bboxHm.toFixed(2)}m scoreA=${scoreA.toFixed(2)} scoreB=${scoreB.toFixed(2)} → length=${detectedLength} width=${detectedWidth}`);
       } else if (nums.length === 1) {
         // one number — if close to bbox width in metres, set width
         const single = nums[0];
         const bboxWm = w / ppm; const bboxHm = h / ppm;
         if (Math.abs(single - bboxWm) < Math.abs(single - bboxHm)) {
           finalW = single * ppm;
+          detectedLength = single;
         } else {
           finalH = single * ppm;
+          detectedWidth = single;
         }
+        console.log(`[IMPORT ROOM ${i}] Single OCR: ${single}m → length=${detectedLength} width=${detectedWidth}`);
+      } else {
+        console.log(`[IMPORT ROOM ${i}] No OCR dims found, using bbox: ${(w/ppm).toFixed(2)}×${(h/ppm).toFixed(2)}m`);
       }
 
       const room = {
@@ -284,7 +306,9 @@
         height: finalH,
         orientation: 'auto',
         color: getRandomColor(),
-        doors: []
+        doors: [],
+        _ocrLength: detectedLength,
+        _ocrWidth: detectedWidth,
       };
 
       // push into global rooms
