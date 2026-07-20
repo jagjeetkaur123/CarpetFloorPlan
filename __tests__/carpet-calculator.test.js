@@ -81,6 +81,32 @@ describe('calcRoom', () => {
     expect(result.roomLen).toBeGreaterThan(5);
   });
 
+  test('uses polygon area to avoid overestimating irregular rooms', () => {
+    // Example from the imported floor-plan PDF: a custom polygon room with 16.23m² area
+    // on a 3.66m roll should be estimated from its area rather than the full bounding box.
+    const room = {
+      name: 'Room 1',
+      isPolygon: true,
+      areaM2: 16.23,
+      length: 5.07,
+      width: 5.05,
+      orientation: 'width',
+    };
+    const result = calcRoom(room, 3.66, 0.1, [], 0, 0.1);
+    expect(result.roomLen).toBeLessThan(6.2);
+    expect(result.roomLen).toBeGreaterThan(4.5);
+    expect(result.areaBasedPackingUsed).toBe(true);
+  });
+
+  test('uses a short rotated strip for a narrow last drop instead of a fresh full drop', () => {
+    // A 5m run on a 3.66m roll leaves a 1.34m last strip. The calculator should
+    // prefer a short rotated strip piece rather than buying another full 5m drop.
+    const room = { length: 5, width: 5, orientation: 'length' };
+    const result = calcRoom(room, 3.66, 0.1, [], 0, 0.1);
+    expect(result.roomLen).toBeLessThan(6.2);
+    expect(result.roomLen).toBeGreaterThan(4.8);
+  });
+
   test('partial last drop from offcut', () => {
     // Room 5m run, 6m across on 4m roll: 2 drops (D1=4m, D2=2m). Offcut covers 2m last drop.
     const room = { length: 5, width: 6, orientation: 'length' };

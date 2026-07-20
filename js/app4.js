@@ -21,8 +21,12 @@ let editingDoor = null;
 let editingRoom = null;
 
 // Polygon drawing state
-let polygonPoints = [];   // world-space points placed so far
+let currentPolygonPoints = [];   // world-space points placed so far
 let polygonSnapping = false; // true when cursor is near first point (close hint)
+
+let isDrawingPolygon = false;
+let currentPolygonPoints = [];
+let mousePos = { x: 0, y: 0 };
 
 // Set drawing mode
 function setMode(m) {
@@ -533,23 +537,74 @@ function polygonSignedArea(pts) {
   return a / 2;
 }
 
-function polygonArea(pts) { return Math.abs(polygonSignedArea(pts)); }
-
-function polygonCentroid(pts) {
-  let cx = 0, cy = 0;
-  const a = polygonSignedArea(pts);
-  for (let i = 0; i < pts.length; i++) {
-    const j = (i + 1) % pts.length;
-    const f = pts[i].x * pts[j].y - pts[j].x * pts[i].y;
-    cx += (pts[i].x + pts[j].x) * f;
-    cy += (pts[i].y + pts[j].y) * f;
-  }
-  return { x: cx / (6 * a), y: cy / (6 * a) };
+// Absolute area
+function polygonArea(pts) {
+  return Math.abs(polygonSignedArea(pts));
 }
 
+// Simple centroid (correct for LIVE drawing)
+function polygonCentroid(pts) {
+  let x = 0, y = 0;
+  for (const p of pts) {
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / pts.length, y: y / pts.length };
+}
+
+// Draw live polygon area
+function drawPolygonArea(ctx, pts, ppm) {
+  if (pts.length < 3) return;
+
+  const areaM2 = (polygonArea(pts) / (ppm * ppm)).toFixed(2);
+  const c = polygonCentroid(pts);
+
+  ctx.fillStyle = "#a78bfa";
+  ctx.font = "14px sans-serif";
+  ctx.fillText(`${areaM2} m²`, c.x + 10, c.y);
+}
+
+// Draw live side lengths
+function drawPolygonDimensions(ctx, pts, ppm) {
+  const n = pts.length;
+  if (n < 2) return;
+
+  ctx.font = "12px sans-serif";
+  ctx.fillStyle = "#a78bfa";
+
+  for (let i = 0; i < n - 1; i++) {
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+
+    const lenM = (Math.hypot(p2.x - p1.x, p2.y - p1.y) / ppm).toFixed(2);
+
+    const mx = (p1.x + p2.x) / 2;
+    const my = (p1.y + p2.y) / 2;
+
+    ctx.fillText(`${lenM} m`, mx + 8, my - 8);
+  }
+}
+
+// Draw temporary segment length (mouse → last point)
+function drawTempSegmentDimension(ctx, lastPt, mousePt, ppm) {
+  const lenM = (Math.hypot(mousePt.x - lastPt.x, mousePt.y - lastPt.y) / ppm).toFixed(2);
+
+  const mx = (lastPt.x + mousePt.x) / 2;
+  const my = (lastPt.y + mousePt.y) / 2;
+
+  ctx.fillStyle = "#f1f5f9";
+  ctx.fillText(`${lenM} m`, mx + 8, my - 8);
+}
+
+// Bounding box
 function polygonBBox(pts) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  pts.forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); });
+  pts.forEach(p => {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  });
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
@@ -558,27 +613,37 @@ function pointInPolygon(px, py, pts) {
   let inside = false;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
     const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
-    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+    if (((yi > py) !== (yj > py)) &&
+        (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
   }
   return inside;
 }
 
+// Finalise polygon after user closes shape
 function finalisePolygon(pts) {
   if (pts.length < 3) return;
+
   // Ensure CCW winding so area is positive
   if (polygonSignedArea(pts) < 0) pts = pts.slice().reverse();
+
   const bb = polygonBBox(pts);
+
   const room = {
     id: Date.now(),
     name: `Room ${roomCounter++}`,
-    points: pts,           // polygon path in world coords
+    points: pts,
     isPolygon: true,
-    // rect fields derived from bounding box (for carpet calc compat)
-    x: bb.x, y: bb.y, width: bb.width, height: bb.height,
+    x: bb.x,
+    y: bb.y,
+    width: bb.width,
+    height: bb.height,
     orientation: 'auto',
     color: getRandomColor(),
     doors: []
   };
+
   rooms.push(room);
   selectedRoom = room;
   polygonPoints = [];
@@ -595,22 +660,21 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-
-// ── Polygon dimension editing ─────────────────────────────────────────────────
+// ── Polygon dimension editing (side length inputs) ─────────────────────────────
 
 function buildPolygonDimsHTML(room, ppm) {
   const pts = room.points;
   const n = pts.length;
   const areaM2 = (polygonArea(pts) / (ppm * ppm)).toFixed(2);
 
-  // Label corners A, B, C, D, E ...
   const alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-
   let sidesHTML = '';
+
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
     const lenM = (Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y) / ppm).toFixed(2);
     const sideLabel = alpha[i] + alpha[j];
+
     sidesHTML += `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;" onclick="event.stopPropagation()">
         <span style="color:#a78bfa;font-size:0.82em;font-weight:700;min-width:32px;">${sideLabel}</span>

@@ -296,6 +296,7 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
     extended: wasExtended, naturalRoomLen,
     narrowStripW, runSideUsed: runSide,
     splitJoin: null,
+    areaBasedPackingUsed: false,
   };
 }
 
@@ -471,6 +472,7 @@ function calculate() {
       }
     }
     const diagramSvg = generateCutDiagramSVG(metreRoom, res, rollWidth, idx);
+    const packingNote = res.areaBasedPackingUsed ? `<div class="info-strip info-amber">&#8635; <strong>Area-based packing used:</strong> this polygon room reused leftover strips internally before adding more roll length.</div>` : '';
 
     html += `
       <div class="room-card">
@@ -513,6 +515,7 @@ function calculate() {
               </div>` : ''}
             </div>
             ${optNote}
+            ${packingNote}
             ${res.offcutUsed      ? `<div class="info-strip info-green">&#10003; Offcut reused: ${res.offcutUsed}</div>` : ''}
             ${res.offcutGenerated ? `<div class="info-strip info-amber">&#10003; Offcut stored (${fmt(res.offcutGenerated.width)}&times;${fmt(res.offcutGenerated.length)} m) &mdash; available for later rooms</div>` : ''}
             ${crossCutNote}

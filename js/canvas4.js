@@ -324,10 +324,11 @@ function draw() {
   ctx.strokeStyle = '#e0e0e0';
   ctx.lineWidth = 1 / zoom;
   
-  const startGridX = -panX / zoom;
-  const startGridY = -panY / zoom;
+  const startGridX = Math.floor((0 - panX) / (ppm * zoom)) * ppm;
+  const startGridY = Math.floor((0 - panY) / (ppm * zoom)) * ppm;
   const endX = (canvas.width - panX) / zoom;
   const endY = (canvas.height - panY) / zoom;
+
   
   for (let x = Math.floor(startGridX / ppm) * ppm; x < endX; x += ppm) {
     ctx.beginPath();
@@ -342,6 +343,42 @@ function draw() {
     ctx.lineTo(endX, y);
     ctx.stroke();
   }
+
+  // Draw polygon outline while drawing
+  if (isDrawingPolygon && currentPolygonPoints.length > 0) {
+    ctx.strokeStyle = "#7c3aed"; // purple
+  ctx.lineWidth = 2 / zoom;
+
+  ctx.beginPath();
+  ctx.moveTo(currentPolygonPoints[0].x, currentPolygonPoints[0].y);
+
+  for (let i = 1; i < currentPolygonPoints.length; i++) {
+    ctx.lineTo(currentPolygonPoints[i].x, currentPolygonPoints[i].y);
+  }
+
+  // Draw temporary segment to mouse preview
+  if (canvas._polyPreview) {
+    ctx.lineTo(canvas._polyPreview.x, canvas._polyPreview.y);
+  }
+
+  ctx.stroke();
+}
+
+
+
+  // LIVE polygon dimensions while drawing
+  if (isDrawingPolygon) {
+    const pts = currentPolygonPoints;
+
+    drawPolygonDimensions(ctx, pts, ppm);
+
+    if (pts.length > 0) {
+      drawTempSegmentDimension(ctx, pts[pts.length - 1], mousePos, ppm);
+    }
+
+    drawPolygonArea(ctx, pts, ppm);
+  }
+
 
   // Draw freehand paths
   freehandPaths.forEach(path => {

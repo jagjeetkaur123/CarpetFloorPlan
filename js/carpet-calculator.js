@@ -1,5 +1,28 @@
 // Carpet calculation helpers
 
+function getRoomAreaM2(room, ppm) {
+  if (!room) return 0;
+
+  if (typeof room.areaM2 === 'number' && room.areaM2 > 0) return room.areaM2;
+
+  if (room.isPolygon && Array.isArray(room.points) && room.points.length >= 3) {
+    let areaPx2 = 0;
+    for (let i = 0; i < room.points.length; i++) {
+      const j = (i + 1) % room.points.length;
+      const p1 = room.points[i];
+      const p2 = room.points[j];
+      areaPx2 += p1.x * p2.y - p2.x * p1.y;
+    }
+    const areaPx = Math.abs(areaPx2) / 2;
+    const ppmVal = typeof ppm === 'number' && ppm > 0 ? ppm : 1;
+    return areaPx / (ppmVal * ppmVal);
+  }
+
+  const L = room.length, W = room.width;
+  if (L && W) return L * W;
+  return 0;
+}
+
 function roundUp(val, step) {
   if (!step || step <= 0) return val;
   return Math.ceil(val / step) * step;
@@ -309,10 +332,12 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
   if (!L || !W) return null;
 
   const { runSide: naturalRun, acrossSide, orientLabel } = getRoomOrientInfo(room, rollWidth);
+  const roomAreaM2 = getRoomAreaM2(room);
 
   // Apply extension if optimisation requested
   const runSide = (minRunLength > naturalRun) ? roundUp(minRunLength, roundTo) : naturalRun;
   const wasExtended = runSide > naturalRun;
+  const effectiveRunSide = roomAreaM2 > 0 && acrossSide > 0.001 ? Math.min(runSide, roomAreaM2 / acrossSide) : runSide;
 
   const fullDrops   = Math.floor(acrossSide / rollWidth);
   const leftoverGap = acrossSide - fullDrops * rollWidth; // width of narrow last strip
@@ -329,6 +354,9 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
   const altFullDrops   = altViable ? Math.floor(altAcross / rollWidth) : 0;
   const altLeftoverGap = altViable ? altAcross - altFullDrops * rollWidth : 0;
   const altOrientLabel = orientLabel === 'along length' ? 'along width' : 'along length';
+  const altEffectiveRunSide = altViable && altAcross > 0.001 && roomAreaM2 > 0
+    ? Math.min(altRun, roomAreaM2 / altAcross)
+    : altRun;
 
   // --- Best-fit offcut search (tries both natural and alt orientation) ---
   // Prefers natural orientation; falls back to alt only when it fits and natural doesn't.
@@ -391,7 +419,7 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
   if (bestPart >= 0) {
     const effFull    = bestPartAlt ? altFullDrops   : fullDrops;
     const effGap     = bestPartAlt ? altLeftoverGap : leftoverGap;
-    const effRunSide = bestPartAlt ? altRun         : runSide;
+    const effRunSide = bestPartAlt ? altEffectiveRunSide : effectiveRunSide;
     const effLabel   = bestPartAlt ? altOrientLabel : orientLabel;
     const strip = offcuts[bestPart];
     const surplusW = strip.width - effGap;
@@ -410,7 +438,7 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
       offcutUsedArea: offcutArea,
       rollAreaUsed,
       offcutGenerated: null,
-      orientLabel: effLabel, extended: false, naturalRoomLen: 0
+      orientLabel: effLabel, extended: false, naturalRoomLen: 0, areaBasedPackingUsed: false
     };
   }
 
@@ -430,7 +458,8 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
         offcutGenerated: null,
         orientLabel,
         extended: false,
-        naturalRoomLen: 0
+        naturalRoomLen: 0,
+        areaBasedPackingUsed: false
       };
     }
   }
@@ -439,36 +468,75 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
   // fullDrops and leftoverGap already computed above
   const joints         = totalDrops - 1;
   const leftoverW      = totalDrops * rollWidth - acrossSide;  // offcut width from last drop
-  const naturalRoomLen = roundUp(totalDrops * (naturalRun + wastePerDrop), roundTo);
+  const naturalRoomLen = roundUp(totalDrops * (effectiveRunSide + wastePerDrop), roundTo);
 
-  // ── Cross-cut / split-join ─────────────────────────────────────────────────
-  // When the customer opts in (room.splitJoin === true) and there IS a narrow
-  // last strip, replace that full drop with rotated shorter pieces.
-  if (room.splitJoin && leftoverGap > 0.001) {
-    const xc = calcCrossCut(leftoverGap, runSide, rollWidth, roundTo);
-    if (xc) {
-      const fullDropLen = roundUp(fullDrops * (runSide + wastePerDrop), roundTo);
-      const roomLen     = fullDropLen + xc.crossCutLen;
-      const carpetArea  = fullDropLen * rollWidth + leftoverGap * runSide;
-
+  // For polygon rooms we can compute total run-length required from area
+  // (sum of all drops lengths = area / rollWidth). If that total is smaller
+  // than the naive rectangular-length estimate, prefer it — this lets the
+  // leftover strip(s) produced by the same room be reused internally rather
+  // than forcing an extra full-length purchase.
+  if (room.isPolygon && roomAreaM2 > 0) {
+    const requiredTotalRun = roomAreaM2 / rollWidth; // metres of roll required in total
+    const roundedRequired  = roundUp(requiredTotalRun + wastePerDrop, roundTo);
+    if (roundedRequired < naturalRoomLen - 1e-9) {
+      const roomLen = roundedRequired;
+      const carpetArea = parseFloat((roomLen * rollWidth).toFixed(3));
+      // No offcut generated beyond what remains across the drops: compute
+      // remaining width per final drop as before and produce an offcut if large.
       let offcutGenerated = null;
       if (leftoverW > 0.05) {
-        offcutGenerated = { from: room.name, width: leftoverW, length: runSide };
+        offcutGenerated = { from: room.name, width: leftoverW, length: effectiveRunSide };
         offcuts.push(offcutGenerated);
       }
 
       return {
-        roomLen, joints: joints + xc.extraJoins, drops: totalDrops, carpetArea,
-        offcutUsed: null, offcutUsedArea: 0, rollAreaUsed: carpetArea, offcutGenerated, orientLabel,
-        extended: wasExtended, naturalRoomLen,
-        narrowStripW: leftoverGap, runSideUsed: runSide,
-        splitJoin: xc,
+        roomLen, joints, drops: totalDrops, carpetArea,
+        offcutUsed: null, offcutUsedArea: 0, rollAreaUsed: carpetArea,
+        offcutGenerated, orientLabel, extended: wasExtended, naturalRoomLen,
+        narrowStripW: leftoverGap, runSideUsed: effectiveRunSide, splitJoin: null,
+        areaBasedPackingUsed: true,
       };
     }
   }
+
+  // ── Cross-cut / split-join ─────────────────────────────────────────────────
+  // For the one-full-drop + narrow-last-strip case, share the same run length
+  // with the narrow remainder instead of treating it as a second full drop.
+  const shouldUseSharedRun = fullDrops === 1 && leftoverGap > 0.001 && leftoverGap < rollWidth * 0.5;
+  if (shouldUseSharedRun) {
+    const sharedRunLen = roundUp(runSide + wastePerDrop, roundTo);
+    const carpetArea   = sharedRunLen * rollWidth;
+
+    let offcutGenerated = null;
+    if (leftoverW > 0.05) {
+      offcutGenerated = { from: room.name, width: leftoverW, length: runSide };
+      offcuts.push(offcutGenerated);
+    }
+
+    return {
+      roomLen: sharedRunLen,
+      joints,
+      drops: totalDrops,
+      carpetArea,
+      offcutUsed: null,
+      offcutUsedArea: 0,
+      rollAreaUsed: carpetArea,
+      offcutGenerated,
+      orientLabel,
+      extended: wasExtended,
+      naturalRoomLen,
+      narrowStripW: leftoverGap,
+      runSideUsed: runSide,
+      splitJoin: null,
+      areaBasedPackingUsed: false,
+    };
+  }
   // ── End cross-cut ──────────────────────────────────────────────────────────
 
-  const roomLen    = roundUp(totalDrops * (runSide + wastePerDrop), roundTo);
+  const canShareRunLength = leftoverGap > 0.001 && fullDrops > 0 && leftoverGap < rollWidth;
+  const roomLen    = canShareRunLength
+    ? roundUp((effectiveRunSide + wastePerDrop), roundTo)
+    : roundUp(totalDrops * (effectiveRunSide + wastePerDrop), roundTo);
   const carpetArea = roomLen * rollWidth;
 
   let offcutGenerated = null;
@@ -486,6 +554,7 @@ function calcRoom(room, rollWidth, roundTo, offcuts, minRunLength = 0, wastePerD
     extended: wasExtended, naturalRoomLen,
     narrowStripW, runSideUsed: runSide,
     splitJoin: null,
+    areaBasedPackingUsed: false,
   };
 }
 
@@ -554,6 +623,7 @@ function calculate() {
     name:        room.name,
     length:      room._ocrLength || room.width  / ppm,
     width:       room._ocrWidth  || room.height / ppm,
+    areaM2:      getRoomAreaM2(room, ppm),
     orientation: room.orientation || 'auto',
     splitJoin:   !!room.splitJoin,
   }));
@@ -661,6 +731,7 @@ function calculate() {
       }
     }
     const diagramSvg = generateCutDiagramSVG(metreRoom, res, rollWidth, idx);
+    const packingNote = res.areaBasedPackingUsed ? `<div class="info-strip info-amber">&#8635; <strong>Area-based packing used:</strong> this polygon room reused leftover strips internally before adding more roll length.</div>` : '';
 
     html += `
       <div class="room-card">
@@ -713,6 +784,7 @@ function calculate() {
               </div>` : ''}
             </div>
             ${optNote}
+            ${packingNote}
             ${res.offcutUsed      ? `<div class="info-strip info-green">&#10003; Offcut reused: ${res.offcutUsed}</div>` : ''}
             ${res.offcutGenerated ? `<div class="info-strip info-amber">&#10003; Offcut stored (${fmt(res.offcutGenerated.width)}&times;${fmt(res.offcutGenerated.length)} m) &mdash; available for later rooms</div>` : ''}
             ${crossCutNote}

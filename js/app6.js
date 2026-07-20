@@ -21,10 +21,143 @@ let editingDoor = null;
 let editingRoom = null;
 
 // Polygon drawing state
-let polygonPoints = [];   // world-space points placed so far
-let polygonSnapping = false; // true when cursor is near first point (close hint)
+let polygonPoints = [];
+let polygonSnapping = false;
 
-// Set drawing mode
+// Live dimension display element
+let dimensionLabel = null;
+
+// ── Live Dimension Functions ──────────────────────────────────────────────────
+
+function createDimensionLabel() {
+  if (dimensionLabel) return;
+  dimensionLabel = document.createElement('div');
+  dimensionLabel.id = 'live-dimension';
+  dimensionLabel.style.cssText = `
+    position: fixed;
+    background: rgba(15, 23, 42, 0.95);
+    color: #22d3ee;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-weight: 600;
+    pointer-events: none;
+    display: none;
+    z-index: 10000;
+    border: 1px solid #0ea5e9;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    white-space: nowrap;
+  `;
+  document.body.appendChild(dimensionLabel);
+}
+
+function showDimension(text, clientX, clientY) {
+  if (!dimensionLabel) createDimensionLabel();
+  dimensionLabel.textContent = text;
+  dimensionLabel.style.left = `${clientX + 20}px`;
+  dimensionLabel.style.top = `${clientY + 20}px`;
+  dimensionLabel.style.display = 'block';
+}
+
+function hideDimension() {
+  if (dimensionLabel) {
+    dimensionLabel.style.display = 'none';
+  }
+}
+
+// Draw dimension lines on the preview rectangle while drawing
+function drawPreviewDimensions(ctx, x1, y1, x2, y2, ppm) {
+  const minX = Math.min(x1, x2);
+  const maxX = Math.max(x1, x2);
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
+  const width = maxX - minX;
+  const height = maxY - minY;
+  
+  const widthM = (width / ppm).toFixed(2);
+  const heightM = (height / ppm).toFixed(2);
+  
+  ctx.font = `bold ${12 / zoom}px Arial`;
+  ctx.fillStyle = '#22d3ee';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  // Width label (top)
+  const dimOffset = 20 / zoom;
+  ctx.fillText(`${widthM}m`, minX + width / 2, minY - dimOffset);
+  
+  // Height label (left side)
+  ctx.save();
+  ctx.translate(minX - dimOffset, minY + height / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(`${heightM}m`, 0, 0);
+  ctx.restore();
+  
+  // Draw dimension lines
+  ctx.strokeStyle = '#22d3ee';
+  ctx.lineWidth = 1 / zoom;
+  
+  // Top dimension line
+  ctx.beginPath();
+  ctx.moveTo(minX, minY - dimOffset / 2);
+  ctx.lineTo(maxX, minY - dimOffset / 2);
+  ctx.stroke();
+  
+  // Left dimension line
+  ctx.beginPath();
+  ctx.moveTo(minX - dimOffset / 2, minY);
+  ctx.lineTo(minX - dimOffset / 2, maxY);
+  ctx.stroke();
+}
+
+// Draw permanent dimensions on completed rooms
+function drawRoomDimensions(ctx, room, ppm) {
+  if (room.isPolygon) {
+    const pts = room.points;
+    ctx.font = `${10 / zoom}px Arial`;
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length;
+      const midX = (pts[i].x + pts[j].x) / 2;
+      const midY = (pts[i].y + pts[j].y) / 2;
+      const lenM = (Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y) / ppm).toFixed(2);
+      
+      const dx = pts[j].x - pts[i].x;
+      const dy = pts[j].y - pts[i].y;
+      const len = Math.hypot(dx, dy);
+      if (len > 0) {
+        const nx = -dy / len * (15 / zoom);
+        const ny = dx / len * (15 / zoom);
+        ctx.fillText(`${lenM}m`, midX + nx, midY + ny);
+      }
+    }
+  } else {
+    const widthM = (room.width / ppm).toFixed(2);
+    const heightM = (room.height / ppm).toFixed(2);
+    
+    ctx.font = `${11 / zoom}px Arial`;
+    ctx.fillStyle = '#cbd5e1';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Width (top)
+    ctx.fillText(`${widthM}m`, room.x + room.width / 2, room.y - 12 / zoom);
+    
+    // Height (right side, rotated)
+    ctx.save();
+    ctx.translate(room.x + room.width + 12 / zoom, room.y + room.height / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.fillText(`${heightM}m`, 0, 0);
+    ctx.restore();
+  }
+}
+
+// ── Set drawing mode ──────────────────────────────────────────────────────────
+
 function setMode(m) {
   mode = m;
   document.getElementById('btnDraw').classList.remove('active');
@@ -34,7 +167,6 @@ function setMode(m) {
   document.getElementById('btnErase').classList.remove('active');
   if (document.getElementById('btnPolygon')) document.getElementById('btnPolygon').classList.remove('active');
 
-  // Cancel any in-progress polygon when switching away
   if (mode === 'polygon' && m !== 'polygon') {
     polygonPoints = [];
     if (typeof draw === 'function') draw();
@@ -96,7 +228,8 @@ function getRandomColor() {
   return colors[Math.floor(Math.random() * colors.length)];
 }
 
-// Room management
+// ── Room management ───────────────────────────────────────────────────────────
+
 function updateRoomsList() {
   const list = document.getElementById('roomsList');
   list.innerHTML = '';
@@ -188,12 +321,10 @@ function splitRoom(roomId) {
     return;
   }
   
-  // Restore original rooms
   room.originalRoomData.forEach(origRoom => {
     rooms.push(origRoom);
   });
   
-  // Remove combined room
   rooms = rooms.filter(r => r.id !== roomId);
   
   selectedRoom = null;
@@ -204,7 +335,6 @@ function splitRoom(roomId) {
 }
 
 function addRoomByDimension() {
-  // Pre-fill name with next room counter
   document.getElementById('armName').value   = `Room ${roomCounter}`;
   document.getElementById('armLength').value = '';
   document.getElementById('armWidth').value  = '';
@@ -213,7 +343,6 @@ function addRoomByDimension() {
   const modal = document.getElementById('addRoomModal');
   modal.style.display = 'flex';
 
-  // Focus the name field, select all so user can type immediately
   setTimeout(() => {
     const nameEl = document.getElementById('armName');
     nameEl.focus();
@@ -240,7 +369,6 @@ function confirmAddRoom() {
 
   const ppm = getPxPerMeter();
 
-  // Place new room to the right of the last room, wrapping if needed
   const padding = 20;
   let placeX = padding, placeY = padding;
   if (rooms.length > 0) {
@@ -306,7 +434,6 @@ function setOrientation(id, orientation) {
   if (room) {
     room.orientation = orientation;
     draw();
-    // Auto-refresh results if they are already showing
     if (document.getElementById('results').innerHTML.trim() !== '') {
       calculate();
     }
@@ -331,7 +458,8 @@ function deleteDoor(roomId, doorId) {
   }
 }
 
-// Edit door functions
+// ── Edit door functions ───────────────────────────────────────────────────────
+
 function editDoor(roomId, doorId) {
   const room = rooms.find(r => r.id === roomId);
   if (!room) return;
@@ -391,7 +519,8 @@ function removeEditingDoor() {
   }
 }
 
-// Door functions
+// ── Door functions ────────────────────────────────────────────────────────────
+
 function addDoorAtPosition(x, y) {
   for (let room of rooms) {
     const edges = [
@@ -466,7 +595,8 @@ function distanceToLineSegment(px, py, x1, y1, x2, y2) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-// Freehand functions
+// ── Freehand functions ────────────────────────────────────────────────────────
+
 function eraseFreehandAt(x, y) {
   for (let i = freehandPaths.length - 1; i >= 0; i--) {
     const path = freehandPaths[i];
@@ -488,11 +618,10 @@ function clearFreehand() {
   }
 }
 
-// Line straightening algorithm
 function straightenPath(points) {
   if (points.length < 2) return points;
 
-  const threshold = 15; // degrees from horizontal/vertical
+  const threshold = 15;
   const straightened = [points[0]];
 
   for (let i = 1; i < points.length; i++) {
@@ -503,15 +632,12 @@ function straightenPath(points) {
     const dy = curr.y - prev.y;
     const angle = Math.atan2(dy, dx) * 180 / Math.PI;
 
-    // Check if nearly horizontal
     if (Math.abs(angle) < threshold || Math.abs(angle - 180) < threshold || Math.abs(angle + 180) < threshold) {
       straightened.push({x: curr.x, y: prev.y});
     }
-    // Check if nearly vertical
     else if (Math.abs(angle - 90) < threshold || Math.abs(angle + 90) < threshold) {
       straightened.push({x: prev.x, y: curr.y});
     }
-    // Keep original point
     else {
       straightened.push(curr);
     }
@@ -520,10 +646,8 @@ function straightenPath(points) {
   return straightened;
 }
 
-
 // ── Polygon room helpers ──────────────────────────────────────────────────────
 
-// Signed area via shoelace (negative = CW winding)
 function polygonSignedArea(pts) {
   let a = 0;
   for (let i = 0; i < pts.length; i++) {
@@ -542,7 +666,6 @@ function polygonCentroid(pts) {
     const j = (i + 1) % pts.length;
     const f = pts[i].x * pts[j].y - pts[j].x * pts[i].y;
     cx += (pts[i].x + pts[j].x) * f;
-
     cy += (pts[i].y + pts[j].y) * f;
   }
   return { x: cx / (6 * a), y: cy / (6 * a) };
@@ -554,7 +677,6 @@ function polygonBBox(pts) {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-// Point-in-polygon (ray casting)
 function pointInPolygon(px, py, pts) {
   let inside = false;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -566,15 +688,13 @@ function pointInPolygon(px, py, pts) {
 
 function finalisePolygon(pts) {
   if (pts.length < 3) return;
-  // Ensure CCW winding so area is positive
   if (polygonSignedArea(pts) < 0) pts = pts.slice().reverse();
   const bb = polygonBBox(pts);
   const room = {
     id: Date.now(),
     name: `Room ${roomCounter++}`,
-    points: pts,           // polygon path in world coords
+    points: pts,
     isPolygon: true,
-    // rect fields derived from bounding box (for carpet calc compat)
     x: bb.x, y: bb.y, width: bb.width, height: bb.height,
     orientation: 'auto',
     color: getRandomColor(),
@@ -587,7 +707,6 @@ function finalisePolygon(pts) {
   draw();
 }
 
-// Cancel polygon in progress (Escape key)
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && mode === 'polygon' && polygonPoints.length > 0) {
     polygonPoints = [];
@@ -596,7 +715,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-
 // ── Polygon dimension editing ─────────────────────────────────────────────────
 
 function buildPolygonDimsHTML(room, ppm) {
@@ -604,13 +722,16 @@ function buildPolygonDimsHTML(room, ppm) {
   const n = pts.length;
   const areaM2 = (polygonArea(pts) / (ppm * ppm)).toFixed(2);
 
+  const alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
   let sidesHTML = '';
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
     const lenM = (Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y) / ppm).toFixed(2);
+    const sideLabel = alpha[i] + alpha[j];
     sidesHTML += `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;" onclick="event.stopPropagation()">
-        <span style="color:#94a3b8;font-size:0.8em;min-width:36px;">Side ${i+1}</span>
+        <span style="color:#a78bfa;font-size:0.82em;font-weight:700;min-width:32px;">${sideLabel}</span>
         <input type="number" step="0.01" min="0.01" value="${lenM}"
                style="width:70px;padding:3px 6px;border-radius:4px;border:1px solid #475569;background:#0f172a;color:#f1f5f9;font-size:0.85em;"
                onchange="resizePolygonSide(${room.id}, ${i}, parseFloat(this.value))"
@@ -627,37 +748,32 @@ function buildPolygonDimsHTML(room, ppm) {
     ${sidesHTML}`;
 }
 
-// Resize one side of a polygon by moving its END point along the same direction
 function resizePolygonSide(roomId, sideIdx, newLenM) {
   const room = rooms.find(r => r.id === roomId);
   if (!room || !room.isPolygon || isNaN(newLenM) || newLenM <= 0) return;
   const ppm = getPxPerMeter();
   const pts = room.points;
   const n = pts.length;
-  const i = sideIdx; 
-  const j = (i + 1) % n;           // end corner of this side
+  const i = sideIdx;
+  const j = (i + 1) % n;
 
-  // Direction unit vector of the side
   const dx = pts[j].x - pts[i].x;
   const dy = pts[j].y - pts[i].y;
   const currentLen = Math.hypot(dx, dy);
-  if (currentLen < 0.001) return;   // degenerate side, skip
+  if (currentLen < 0.001) return;
   const ux = dx / currentLen;
   const uy = dy / currentLen;
 
-  // Move the END corner along the same direction to the new length
   pts[j] = {
     x: pts[i].x + ux * newLenM * ppm,
     y: pts[i].y + uy * newLenM * ppm
   };
 
-  // Recompute bounding box
   const bb = polygonBBox(pts);
   room.x = bb.x; room.y = bb.y; room.width = bb.width; room.height = bb.height;
   draw();
 }
 
-// Delete a corner point (minimum 3 kept)
 function deletePolygonPoint(roomId, idx) {
   const room = rooms.find(r => r.id === roomId);
   if (!room || !room.isPolygon || room.points.length <= 3) {
@@ -671,7 +787,6 @@ function deletePolygonPoint(roomId, idx) {
   draw();
 }
 
-// Add a new corner (midpoint of last edge)
 function addPolygonPoint(roomId) {
   const room = rooms.find(r => r.id === roomId);
   if (!room || !room.isPolygon) return;
@@ -686,7 +801,6 @@ function addPolygonPoint(roomId) {
   draw();
 }
 
-// Scale entire polygon around its centroid
 function applyPolygonScale(roomId) {
   const room = rooms.find(r => r.id === roomId);
   if (!room || !room.isPolygon) return;
@@ -701,12 +815,13 @@ function applyPolygonScale(roomId) {
   }));
   const bb = polygonBBox(room.points);
   room.x = bb.x; room.y = bb.y; room.width = bb.width; room.height = bb.height;
-  if (el) el.value = 100; // reset
+  if (el) el.value = 100;
   updateRoomsList();
   draw();
 }
 
-// Zoom controls
+// ── Zoom controls ─────────────────────────────────────────────────────────────
+
 function zoomIn() {
   const oldZoom = zoom;
   zoom *= 1.2;
@@ -749,12 +864,13 @@ function clearAll() {
 
 function ensurePdfJsWorkerPath() {
   if (typeof pdfjsLib !== 'undefined' && pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '[cdnjs.cloudflare.com](https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js)';
     console.log('PDF.js worker configured:', pdfjsLib.GlobalWorkerOptions.workerSrc);
   }
 }
 
-// Background image
+// ── Background image ──────────────────────────────────────────────────────────
+
 function updateBgStatus(message, isError = false) {
   const statusEl = document.getElementById('bgStatus');
   if (!statusEl) return;
@@ -766,7 +882,6 @@ function loadBgImage(input) {
   const file = input.files[0];
   if (!file) return;
   updateBgStatus('Loading file...');
-  // If PDF, render first page to canvas using PDF.js then convert to image
   if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
     if (typeof pdfjsLib === 'undefined') {
       updateBgStatus('PDF.js is not available. Refresh the page.', true);
@@ -815,7 +930,6 @@ function clearBgImage() {
   draw();
 }
 
-// Render first page of a PDF file to a PNG Blob using PDF.js
 function renderPdfPageToBlob(file) {
   return new Promise((resolve, reject) => {
     try {
@@ -824,7 +938,6 @@ function renderPdfPageToBlob(file) {
       loadingTask.promise.then(pdf => {
         return pdf.getPage(1);
       }).then(page => {
-        // Choose a scale so the rendered width matches canvas display width
         const canvasEl = document.getElementById('canvas');
         const containerW = (canvasEl && canvasEl.clientWidth) ? canvasEl.clientWidth : 1200;
         const viewport = page.getViewport({ scale: 1 });
@@ -847,20 +960,12 @@ function renderPdfPageToBlob(file) {
   });
 }
 
-function clearBgImage() {
-  bgImage = null;
-  document.getElementById('bgImageInput').value = '';
-  draw();
-}
-
-// Auto import rooms from selected background image using OpenCV/Tesseract
 async function autoImportRooms() {
   const input = document.getElementById('bgImageInput');
   const file = input.files[0];
   if (!file) { alert('Please select a background image first (Upload Image).'); return; }
 
   try {
-    // show brief progress
     const orig = document.getElementById('info');
     const old = orig.textContent;
     orig.textContent = 'Detecting rooms — please wait...';
@@ -873,7 +978,6 @@ async function autoImportRooms() {
         return;
       }
       ensurePdfJsWorkerPath();
-      // render first page to image blob then pass as File to importer
       const blob = await renderPdfPageToBlob(file);
       const imgFile = new File([blob], 'page1.png', { type: 'image/png' });
       res = await window.importDetectedRooms(imgFile, { assignNames: true });
@@ -891,10 +995,415 @@ async function autoImportRooms() {
   }
 }
 
-// Initialize
-updateInfo();
+// ── Main draw function ────────────────────────────────────────────────────────
 
-// ── Mobile tab switching ───────────────────────────────────────────────────────
+function draw() {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const ppm = getPxPerMeter();
+  
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  ctx.save();
+  ctx.translate(panX, panY);
+  ctx.scale(zoom, zoom);
+  
+  // Draw background image
+  if (bgImage) {
+    const opacity = parseFloat(document.getElementById('bgOpacity')?.value || 0.5);
+    ctx.globalAlpha = opacity;
+    ctx.drawImage(bgImage, 0, 0);
+    ctx.globalAlpha = 1;
+  }
+  
+  // Draw grid
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 0.5 / zoom;
+  const gridSize = ppm;
+  const startX = Math.floor(-panX / zoom / gridSize) * gridSize;
+  const startY = Math.floor(-panY / zoom / gridSize) * gridSize;
+  const endX = startX + canvas.width / zoom + gridSize * 2;
+  const endY = startY + canvas.height / zoom + gridSize * 2;
+  
+  for (let x = startX; x < endX; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, startY);
+    ctx.lineTo(x, endY);
+    ctx.stroke();
+  }
+  for (let y = startY; y < endY; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(startX, y);
+    ctx.lineTo(endX, y);
+    ctx.stroke();
+  }
+  
+  // Draw freehand paths
+  freehandPaths.forEach(path => {
+    if (path.points.length < 2) return;
+    ctx.strokeStyle = path.color;
+    ctx.lineWidth = path.size / zoom;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(path.points[0].x, path.points[0].y);
+    for (let i = 1; i < path.points.length; i++) {
+      ctx.lineTo(path.points[i].x, path.points[i].y);
+    }
+    ctx.stroke();
+  });
+  
+  // Draw rooms
+  rooms.forEach(room => {
+    const isSelected = room === selectedRoom;
+    
+    if (room.isPolygon) {
+      // Draw polygon room
+      ctx.fillStyle = room.color + '40';
+      ctx.strokeStyle = isSelected ? '#22d3ee' : room.color;
+      ctx.lineWidth = (isSelected ? 3 : 2) / zoom;
+      
+      ctx.beginPath();
+      ctx.moveTo(room.points[0].x, room.points[0].y);
+      for (let i = 1; i < room.points.length; i++) {
+        ctx.lineTo(room.points[i].x, room.points[i].y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // Draw corner markers
+      room.points.forEach((pt, idx) => {
+        ctx.fillStyle = isSelected ? '#22d3ee' : '#fff';
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 4 / zoom, 0, Math.PI * 2);
+        ctx.fill();  
+      });
+    } else {
+      // Draw rectangle room
+      ctx.fillStyle = room.color + '40';
+      ctx.strokeStyle = isSelected ? '#22d3ee' : room.color;
+      ctx.lineWidth = (isSelected ? 3 : 2) / zoom;
+      ctx.fillRect(room.x, room.y, room.width, room.height);
+      ctx.strokeRect(room.x, room.y, room.width, room.height);
+    }
+    
+    // Draw room name
+    ctx.fillStyle = '#f1f5f9';
+    ctx.font = `bold ${14 / zoom}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    if (room.isPolygon) {
+      const centroid = polygonCentroid(room.points);
+      ctx.fillText(room.name, centroid.x, centroid.y);
+    } else {
+      ctx.fillText(room.name, room.x + room.width / 2, room.y + room.height / 2);
+    }
+    
+    // Draw room dimensions
+    drawRoomDimensions(ctx, room, ppm);
+    
+    // Draw doors
+    room.doors.forEach(door => {
+      ctx.fillStyle = '#fbbf24';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2 / zoom;
+      
+      if (door.side === 'top' || door.side === 'bottom') {
+        ctx.fillRect(door.x, door.y - 3 / zoom, door.width, 6 / zoom);
+        ctx.strokeRect(door.x, door.y - 3 / zoom, door.width, 6 / zoom);
+      } else {
+        ctx.fillRect(door.x - 3 / zoom, door.y, 6 / zoom, door.width);
+        ctx.strokeRect(door.x - 3 / zoom, door.y, 6 / zoom, door.width);
+      }
+    });
+  });
+  
+  // Draw polygon in progress
+  if (mode === 'polygon' && polygonPoints.length > 0) {
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 2 / zoom;
+    ctx.fillStyle = '#22d3ee20';
+    
+    ctx.beginPath();
+    ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+    for (let i = 1; i < polygonPoints.length; i++) {
+      ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+    }
+    ctx.stroke();
+    
+    // Draw points
+    polygonPoints.forEach((pt, idx) => {
+      ctx.fillStyle = idx === 0 && polygonSnapping ? '#22c55e' : '#22d3ee';
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, (idx === 0 ? 8 : 5) / zoom, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  
+  ctx.restore();
+}
+
+// ── Canvas event handlers with live dimensions ────────────────────────────────
+
+const canvas = document.getElementById('canvas');
+
+canvas.addEventListener('mousedown', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left - panX) / zoom;
+  const y = (e.clientY - rect.top - panY) / zoom;
+
+  if (panMode) {
+    dragging = true;
+    lastPanX = e.clientX;
+    lastPanY = e.clientY;
+    return;
+  }
+
+  if (mode === 'draw') {
+    drawing = true;
+    startX = x;
+    startY = y;
+  } else if (mode === 'polygon') {
+    if (polygonPoints.length >= 3) {
+      const first = polygonPoints[0];
+      const dist = Math.hypot(x - first.x, y - first.y);
+      if (dist < 15 / zoom) {
+        finalisePolygon(polygonPoints.slice());
+        hideDimension();
+        return;
+      }
+    }
+    polygonPoints.push({ x, y });
+    updateInfo();
+    draw();
+  } else if (mode === 'select') {
+    for (let i = rooms.length - 1; i >= 0; i--) {
+      const room = rooms[i];
+      const hit = room.isPolygon
+        ? pointInPolygon(x, y, room.points)
+        : (x >= room.x && x <= room.x + room.width && y >= room.y && y <= room.y + room.height);
+      if (hit) {
+        dragging = true;
+        dragRoom = room;
+        selectedRoom = room;
+        dragOffsetX = x - room.x;
+        dragOffsetY = y - room.y;
+        updateRoomsList();
+        draw();
+        return;
+      }
+    }
+  } else if (mode === 'door') {
+    addDoorAtPosition(x, y);
+  } else if (mode === 'freehand') {
+    drawing = true;
+    currentPath = {
+      points: [{ x, y }],
+      color: document.getElementById('penColor').value,
+      size: parseInt(document.getElementById('penSize').value)
+    };
+  } else if (mode === 'erase') {
+    eraseFreehandAt(x, y);
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left - panX) / zoom;
+  const y = (e.clientY - rect.top - panY) / zoom;
+  const ppm = getPxPerMeter();
+
+  if (panMode && dragging) {
+    panX += e.clientX - lastPanX;
+    panY += e.clientY - lastPanY;
+    lastPanX = e.clientX;
+    lastPanY = e.clientY;
+    draw();
+    return;
+  }
+
+  if (mode === 'draw' && drawing) {
+    // Live dimension display for rectangle drawing
+    const widthPx = Math.abs(x - startX);
+    const heightPx = Math.abs(y - startY);
+    const widthM = (widthPx / ppm).toFixed(2);
+    const heightM = (heightPx / ppm).toFixed(2);
+    const areaM2 = (widthM * heightM).toFixed(2);
+    
+    showDimension(`${widthM}m × ${heightM}m  (${areaM2}m²)`, e.clientX, e.clientY);
+    draw();
+    
+    // Draw preview rectangle
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 2 / zoom;
+    ctx.setLineDash([5 / zoom, 5 / zoom]);
+    ctx.strokeRect(
+      Math.min(startX, x),
+      Math.min(startY, y),
+      widthPx,
+      heightPx
+    );
+    ctx.setLineDash([]);
+    
+    // Draw dimension lines on preview
+    drawPreviewDimensions(ctx, startX, startY, x, y, ppm);
+    ctx.restore();
+    
+  } else if (mode === 'polygon' && polygonPoints.length > 0) {
+    // Live dimension for polygon
+    const last = polygonPoints[polygonPoints.length - 1];
+    const segmentPx = Math.hypot(x - last.x, y - last.y);
+    const segmentM = (segmentPx / ppm).toFixed(2);
+    
+    let perimeterPx = 0;
+    for (let i = 0; i < polygonPoints.length - 1; i++) {
+      perimeterPx += Math.hypot(
+        polygonPoints[i + 1].x - polygonPoints[i].x,
+        polygonPoints[i + 1].y - polygonPoints[i].y
+      );
+    }
+    perimeterPx += segmentPx;
+    const perimeterM = (perimeterPx / ppm).toFixed(2);
+    
+    showDimension(`Edge: ${segmentM}m  |  Total: ${perimeterM}m  |  ${polygonPoints.length} pts`, e.clientX, e.clientY);
+    
+    if (polygonPoints.length >= 3) {
+      const first = polygonPoints[0];
+      polygonSnapping = Math.hypot(x - first.x, y - first.y) < 15 / zoom;
+    }
+    draw();
+    
+    // Draw preview line to cursor
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
+    ctx.strokeStyle = polygonSnapping ? '#22c55e' : '#22d3ee';
+    ctx.lineWidth = 2 / zoom;
+    ctx.setLineDash([5 / zoom, 5 / zoom]);
+    ctx.beginPath();
+    ctx.moveTo(last.x, last.y);
+    ctx.lineTo(polygonSnapping ? polygonPoints[0].x : x, polygonSnapping ? polygonPoints[0].y : y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    
+  } else if (mode === 'select' && dragging && dragRoom) {
+    const dx = x - dragOffsetX - dragRoom.x;
+    const dy = y - dragOffsetY - dragRoom.y;
+    
+    if (dragRoom.isPolygon) {
+      dragRoom.points.forEach(p => { p.x += dx; p.y += dy; });
+      const bb = polygonBBox(dragRoom.points);
+      dragRoom.x = bb.x;
+      dragRoom.y = bb.y;
+    } else {
+      dragRoom.x = x - dragOffsetX;
+      dragRoom.y = y - dragOffsetY;
+    }
+    
+    // Show position while dragging
+    const posX = (dragRoom.x / ppm).toFixed(2);
+    const posY = (dragRoom.y / ppm).toFixed(2);
+    showDimension(`Position: ${posX}m, ${posY}m`, e.clientX, e.clientY);
+    
+    draw();
+  } else if (mode === 'freehand' && drawing && currentPath) {
+    currentPath.points.push({ x, y });
+    draw();
+    
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
+    ctx.strokeStyle = currentPath.color;
+    ctx.lineWidth = currentPath.size / zoom;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    const pts = currentPath.points;
+    if (pts.length > 0) {
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    hideDimension();
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left - panX) / zoom;
+  const y = (e.clientY - rect.top - panY) / zoom;
+
+  hideDimension();
+
+  if (panMode && dragging) {
+    dragging = false;
+    return;
+  }
+
+  if (mode === 'draw' && drawing) {
+    drawing = false;
+    const w = Math.abs(x - startX);
+    const h = Math.abs(y - startY);
+    
+    if (w > 10 && h > 10) {
+      const room = {
+        id: Date.now(),
+        name: `Room ${roomCounter++}`,
+        x: Math.min(startX, x),
+        y: Math.min(startY, y),
+        width: w,
+        height: h,
+        orientation: 'auto',
+        color: getRandomColor(),
+        doors: []
+      };
+      rooms.push(room);
+      selectedRoom = room;
+      updateRoomsList();
+    }
+    draw();
+  } else if (mode === 'select') {
+    dragging = false;
+    dragRoom = null;
+  } else if (mode === 'freehand' && drawing && currentPath) {
+    drawing = false;
+    if (currentPath.points.length > 1) {
+      currentPath.points = straightenPath(currentPath.points);
+      freehandPaths.push(currentPath);
+    }
+    currentPath = null;
+    draw();
+  }
+});
+
+canvas.addEventListener('dblclick', (e) => {
+  if (mode === 'polygon' && polygonPoints.length >= 3) {
+    finalisePolygon(polygonPoints.slice());
+    hideDimension();
+  }
+});
+
+// Mouse leave - hide dimension
+canvas.addEventListener('mouseleave', () => {
+  hideDimension();
+});
+
+// ── Mobile tab switching ──────────────────────────────────────────────────────
+
 function switchMobileTab(tab) {
   const sidebar   = document.querySelector('.sidebar');
   const rightPanel = document.querySelector('.right-panel');
@@ -907,3 +1416,16 @@ function switchMobileTab(tab) {
 
   tabs.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
 }
+
+// ── Toggle pan mode ───────────────────────────────────────────────────────────
+
+function togglePan() {
+  panMode = !panMode;
+  updateInfo();
+  canvas.style.cursor = panMode ? 'grab' : (mode === 'select' ? 'move' : 'crosshair');
+}
+
+// ── Initialize ────────────────────────────────────────────────────────────────
+
+updateInfo();
+draw();
